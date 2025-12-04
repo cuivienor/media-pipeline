@@ -1,0 +1,9 @@
+{
+  "type": "movie",
+  "name": "Test Movie",
+  "safe_name": "Test_Movie",
+  "season": "",
+  "disc": "",
+  "output_dir": "/mnt/media/staging/1-ripped/movies/Test_Movie",
+  "started_at": "2025-01-15T10:00:00Z"
+}

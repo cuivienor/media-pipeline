@@ -1,0 +1,9 @@
+{
+  "type": "tv",
+  "name": "Breaking Bad",
+  "safe_name": "Breaking_Bad",
+  "season": "Season_01",
+  "input_dir": "/mnt/media/staging/1-ripped/tv/Breaking_Bad/S01",
+  "output_dir": "/mnt/media/staging/2-remuxed/tv/Breaking_Bad/Season_01",
+  "started_at": "2025-01-15T11:00:00Z"
+}

@@ -1,0 +1,9 @@
+{
+  "type": "tv",
+  "name": "Breaking Bad",
+  "safe_name": "Breaking_Bad",
+  "season": "S01",
+  "disc": "1",
+  "output_dir": "/mnt/media/staging/1-ripped/tv/Breaking_Bad/S01/Disc1",
+  "started_at": "2025-01-15T10:00:00Z"
+}
