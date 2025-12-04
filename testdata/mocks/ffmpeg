@@ -1,0 +1,36 @@
+#!/bin/bash
+# Mock ffmpeg - copies input to output instead of transcoding
+# Handles common patterns like: ffmpeg -i input.mkv ... output.mkv
+
+INPUT=""
+OUTPUT=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -i)
+            INPUT="$2"
+            shift 2
+            ;;
+        -y)
+            shift
+            ;;
+        *.mkv|*.mp4)
+            OUTPUT="$1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -n "$OUTPUT" ]; then
+    mkdir -p "$(dirname "$OUTPUT")"
+    if [ -n "$INPUT" ] && [ -f "$INPUT" ]; then
+        cp "$INPUT" "$OUTPUT"
+    else
+        touch "$OUTPUT"
+    fi
+    echo "Mock: Created $OUTPUT"
+fi
+exit 0

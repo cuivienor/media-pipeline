@@ -1,0 +1,25 @@
+#!/bin/bash
+# Mock makemkvcon - creates empty .mkv files instead of ripping
+# Usage mirrors real: makemkvcon mkv disc:0 all /output/dir
+
+case "$1" in
+    info)
+        echo "Mock MakeMKV - disc info"
+        echo "TINFO:0,2,0,\"Title 00\""
+        echo "TINFO:1,2,0,\"Title 01\""
+        ;;
+    mkv)
+        OUTPUT_DIR="$4"
+        if [ -n "$OUTPUT_DIR" ]; then
+            mkdir -p "$OUTPUT_DIR"
+            touch "$OUTPUT_DIR/title_t00.mkv"
+            touch "$OUTPUT_DIR/title_t01.mkv"
+            echo "Mock: Created test files in $OUTPUT_DIR"
+        fi
+        ;;
+    *)
+        echo "Mock makemkvcon: unknown command $1"
+        exit 1
+        ;;
+esac
+exit 0

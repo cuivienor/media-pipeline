@@ -1,0 +1,39 @@
+#!/bin/bash
+# Mock filebot - creates expected output structure
+# Handles: filebot -rename /input --output /library --db TheMovieDB ...
+
+INPUT=""
+OUTPUT=""
+ACTION="move"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -rename)
+            INPUT="$2"
+            shift 2
+            ;;
+        --output)
+            OUTPUT="$2"
+            shift 2
+            ;;
+        --action)
+            ACTION="$2"
+            shift 2
+            ;;
+        --db|--format|-non-strict|--q)
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -n "$INPUT" ] && [ -n "$OUTPUT" ]; then
+    # Create mock library structure
+    mkdir -p "$OUTPUT/movies/Test Movie (2025)"
+    touch "$OUTPUT/movies/Test Movie (2025)/Test Movie (2025).mkv"
+    echo "Mock: Organized files to $OUTPUT"
+    echo "[MOVE] $INPUT -> $OUTPUT/movies/Test Movie (2025)/Test Movie (2025).mkv"
+fi
+exit 0
