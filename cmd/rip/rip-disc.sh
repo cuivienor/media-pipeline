@@ -125,7 +125,8 @@ fi
 SAFE_NAME=$(echo "$NAME" | tr ' ' '_' | tr -cd '[:alnum:]_-')
 
 # Standardized media path (consistent across all containers)
-MEDIA_BASE="/mnt/media"
+# Can be overridden via environment for testing
+MEDIA_BASE="${MEDIA_BASE:-/mnt/media}"
 
 # Verify mount exists
 if [ ! -d "$MEDIA_BASE/staging" ]; then

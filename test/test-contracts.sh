@@ -51,17 +51,17 @@ test_rip_script() {
     local state_dir=$(find "$STAGING_DIR" -name ".rip" -type d 2>/dev/null | head -1)
     if [ -z "$state_dir" ]; then
         echo -e "${RED}FAIL${NC} - no .rip directory created"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
         return
     fi
 
     if $VALIDATOR "$state_dir" >/dev/null 2>&1; then
         echo -e "${GREEN}PASS${NC}"
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
         echo -e "${RED}FAIL${NC}"
         $VALIDATOR "$state_dir"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 }
 
