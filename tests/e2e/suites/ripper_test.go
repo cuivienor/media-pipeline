@@ -2,6 +2,7 @@ package suites
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -216,29 +217,20 @@ func TestRipper_E2E_MultipleTVShowDiscs(t *testing.T) {
 		}
 	}
 
-	// Verify both disc directories exist
+	// Verify both disc directories exist with state files
 	for disc := 1; disc <= 2; disc++ {
-		discDir := filepath.Join(env.StagingBase, "1-ripped", "tv", "Multi_Disc_Show", "S01", "Disc"+string(rune('0'+disc)))
+		discDir := filepath.Join(env.StagingBase, "1-ripped", "tv", "Multi_Disc_Show", "S01", fmt.Sprintf("Disc%d", disc))
 		if _, err := os.Stat(discDir); os.IsNotExist(err) {
 			t.Errorf("Disc%d directory does not exist: %s", disc, discDir)
 		}
-	}
 
-	// Use scanner to verify
-	config := env.ScannerConfig()
-	s := scanner.New(config)
-
-	state, err := s.ScanPipeline()
-	if err != nil {
-		t.Fatalf("Scanner.ScanPipeline failed: %v", err)
-	}
-
-	// Filter to get only TV shows
-	tvShows := filterByType(state.Items, model.MediaTypeTV)
-
-	// Scanner should find the TV show (may count discs separately)
-	if len(tvShows) < 1 {
-		t.Errorf("Expected at least 1 TV item, got %d", len(tvShows))
+		// Verify state directory exists for each disc
+		stateDir, err := testenv.FindStateDir(discDir, ".rip")
+		if err != nil {
+			t.Errorf("Disc%d has no .rip state dir: %v", disc, err)
+			continue
+		}
+		stateDir.AssertStatus(t, model.StatusCompleted)
 	}
 }
 
