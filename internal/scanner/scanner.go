@@ -17,10 +17,15 @@ type Config struct {
 }
 
 // DefaultConfig returns the default configuration for production
+// Respects MEDIA_BASE environment variable if set
 func DefaultConfig() Config {
+	base := os.Getenv("MEDIA_BASE")
+	if base == "" {
+		base = "/mnt/media"
+	}
 	return Config{
-		StagingBase: "/mnt/media/staging",
-		LibraryBase: "/mnt/media/library",
+		StagingBase: filepath.Join(base, "staging"),
+		LibraryBase: filepath.Join(base, "library"),
 	}
 }
 
