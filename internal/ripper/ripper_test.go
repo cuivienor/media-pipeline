@@ -244,6 +244,43 @@ func TestNewRipper_DefaultStateManager(t *testing.T) {
 	}
 }
 
+func TestRipper_Rip_CreatesOrganizationScaffolding(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mockRunner := &testMakeMKVRunner{}
+	mockState := &testStateManager{}
+
+	ripper := NewRipper(tmpDir, mockRunner, mockState)
+
+	req := &RipRequest{
+		Type:     MediaTypeMovie,
+		Name:     "Test Movie",
+		DiscPath: "disc:0",
+	}
+
+	_, err := ripper.Rip(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Rip failed: %v", err)
+	}
+
+	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
+
+	// Check scaffolding was created
+	expectedDirs := []string{"_discarded", "_main", "_extras/trailers"}
+	for _, dir := range expectedDirs {
+		path := filepath.Join(outputDir, dir)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("Expected scaffolding directory %q to exist", dir)
+		}
+	}
+
+	// Check _REVIEW.txt exists
+	reviewPath := filepath.Join(outputDir, "_REVIEW.txt")
+	if _, err := os.Stat(reviewPath); os.IsNotExist(err) {
+		t.Error("Expected _REVIEW.txt to exist")
+	}
+}
+
 // Test helper implementations
 type testMakeMKVRunner struct {
 	discInfo        *DiscInfo

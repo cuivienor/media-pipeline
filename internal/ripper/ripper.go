@@ -71,6 +71,11 @@ func (r *Ripper) Rip(ctx context.Context, req *RipRequest) (*RipResult, error) {
 		return result, err
 	}
 
+	// Create organization scaffolding for manual review
+	if err := CreateOrganizationScaffolding(outputDir, req); err != nil {
+		return nil, fmt.Errorf("failed to create organization scaffolding: %w", err)
+	}
+
 	// Complete state
 	if err := r.state.Complete(outputDir); err != nil {
 		return nil, fmt.Errorf("failed to complete state: %w", err)
