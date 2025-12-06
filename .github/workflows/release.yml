@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build binaries
+        run: |
+          GOOS=linux GOARCH=amd64 make build-all
+
+      - name: Create tarball
+        run: |
+          mkdir -p dist/media-pipeline-linux-amd64
+          cp bin/media-pipeline bin/ripper bin/mock-makemkv dist/media-pipeline-linux-amd64/
+          cat > dist/media-pipeline-linux-amd64/README.md << 'EOF'
+          # media-pipeline ${{ steps.version.outputs.VERSION }}
+
+          ## Binaries
+
+          - `media-pipeline` - TUI for monitoring pipeline status
+          - `ripper` - CLI for starting rip jobs
+          - `mock-makemkv` - Mock MakeMKV for testing (generates synthetic MKVs)
+
+          ## Usage
+
+          ```bash
+          # Add to PATH
+          export PATH=/path/to/extracted/dir:$PATH
+
+          # Run TUI
+          media-pipeline
+
+          # Rip a movie
+          ripper -t movie -n "Movie Name"
+
+          # Rip a TV show disc
+          ripper -t tv -n "Show Name" -s 1 -d 1
+          ```
+
+          ## Environment Variables
+
+          - `MEDIA_BASE` - Root media directory (default: /mnt/media)
+          - `MAKEMKVCON_PATH` - Path to makemkvcon or mock-makemkv
+          EOF
+          cd dist && tar -czvf media-pipeline-linux-amd64.tar.gz media-pipeline-linux-amd64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          files: dist/media-pipeline-linux-amd64.tar.gz
+          generate_release_notes: true
