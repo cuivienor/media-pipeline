@@ -78,6 +78,10 @@ var (
 				Foreground(colorPrimary).
 				MarginTop(1).
 				MarginBottom(1)
+
+	// Error style
+	errorStyle = lipgloss.NewStyle().
+			Foreground(colorError)
 )
 
 // StatusIcon returns the appropriate icon for a status

@@ -17,6 +17,7 @@ const (
 	ViewStageList
 	ViewActionNeeded
 	ViewItemDetail
+	ViewNewRip
 )
 
 // App is the main application model
@@ -35,6 +36,9 @@ type App struct {
 	// Window size
 	width  int
 	height int
+
+	// Form state
+	newRipForm *NewRipForm
 }
 
 // NewApp creates a new application instance
@@ -78,6 +82,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.state = msg.state
 		a.err = msg.err
 		return a, nil
+
+	case ripCompleteMsg:
+		if msg.err != nil {
+			a.err = msg.err
+		}
+		a.currentView = ViewOverview
+		return a, a.loadState
 	}
 
 	return a, nil
@@ -85,6 +96,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Route to form handler if in NewRip view
+	if a.currentView == ViewNewRip {
+		return a.handleNewRipKey(msg)
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return a, tea.Quit
@@ -92,6 +108,17 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		// Refresh
 		return a, a.loadState
+
+	case "n":
+		// New rip (only from overview or action needed view)
+		if a.currentView == ViewOverview || a.currentView == ViewActionNeeded {
+			a.currentView = ViewNewRip
+			a.newRipForm = &NewRipForm{
+				Type:     "movie",
+				DiscPath: "disc:0",
+			}
+			return a, nil
+		}
 
 	case "tab":
 		// Toggle between overview and action needed
@@ -113,6 +140,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.currentView = ViewStageList
 			a.cursor = 0
 		case ViewActionNeeded:
+			a.currentView = ViewOverview
+			a.cursor = 0
+		case ViewNewRip:
 			a.currentView = ViewOverview
 			a.cursor = 0
 		}
@@ -251,6 +281,8 @@ func (a *App) View() string {
 		return a.renderActionNeeded()
 	case ViewItemDetail:
 		return a.renderItemDetail()
+	case ViewNewRip:
+		return a.renderNewRipForm()
 	default:
 		return "Unknown view"
 	}
