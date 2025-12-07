@@ -139,6 +139,15 @@ func (r *SQLiteRepository) ListMediaItems(ctx context.Context, opts ListOptions)
 		args = append(args, *opts.Type)
 	}
 
+	if opts.ActiveOnly {
+		query += `
+			AND EXISTS (
+				SELECT 1 FROM jobs
+				WHERE jobs.media_item_id = media_items.id
+				  AND jobs.status IN ('pending', 'in_progress')
+			)`
+	}
+
 	query += " ORDER BY created_at DESC"
 
 	if opts.Limit > 0 {

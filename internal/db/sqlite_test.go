@@ -305,6 +305,71 @@ func TestSQLiteRepository_ListMediaItems(t *testing.T) {
 			t.Errorf("len(items) = %d, want 2", len(items))
 		}
 	})
+
+	t.Run("filter by active only", func(t *testing.T) {
+		// Create jobs for some items
+		// movie1 has an active job
+		job1 := &model.Job{
+			MediaItemID: movie1.ID,
+			Stage:       model.StageRip,
+			Status:      model.JobStatusInProgress,
+		}
+		if err := repo.CreateJob(ctx, job1); err != nil {
+			t.Fatalf("CreateJob() error = %v", err)
+		}
+
+		// movie2 has a completed job
+		job2 := &model.Job{
+			MediaItemID: movie2.ID,
+			Stage:       model.StageRip,
+			Status:      model.JobStatusCompleted,
+		}
+		if err := repo.CreateJob(ctx, job2); err != nil {
+			t.Fatalf("CreateJob() error = %v", err)
+		}
+
+		// tv1 has a pending job
+		job3 := &model.Job{
+			MediaItemID: tv1.ID,
+			Stage:       model.StageRip,
+			Status:      model.JobStatusPending,
+		}
+		if err := repo.CreateJob(ctx, job3); err != nil {
+			t.Fatalf("CreateJob() error = %v", err)
+		}
+
+		// Query for active only - should get movie1 and tv1
+		items, err := repo.ListMediaItems(ctx, ListOptions{ActiveOnly: true})
+		if err != nil {
+			t.Fatalf("ListMediaItems() error = %v", err)
+		}
+
+		if len(items) != 2 {
+			t.Errorf("len(items) = %d, want 2", len(items))
+		}
+
+		// Verify we got the right items
+		foundMovie1 := false
+		foundTV1 := false
+		for _, item := range items {
+			if item.ID == movie1.ID {
+				foundMovie1 = true
+			}
+			if item.ID == tv1.ID {
+				foundTV1 = true
+			}
+			if item.ID == movie2.ID {
+				t.Errorf("movie2 should not be in active items (has completed job)")
+			}
+		}
+
+		if !foundMovie1 {
+			t.Error("movie1 not found in active items")
+		}
+		if !foundTV1 {
+			t.Error("tv1 not found in active items")
+		}
+	})
 }
 
 func TestSQLiteRepository_CreateJob(t *testing.T) {
