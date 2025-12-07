@@ -18,6 +18,7 @@ type Repository interface {
 	CreateJob(ctx context.Context, job *model.Job) error
 	GetJob(ctx context.Context, id int64) (*model.Job, error)
 	GetActiveJobForStage(ctx context.Context, mediaItemID int64, stage model.Stage, disc *int) (*model.Job, error)
+	UpdateJob(ctx context.Context, job *model.Job) error
 	UpdateJobStatus(ctx context.Context, id int64, status model.JobStatus, errorMsg string) error
 	ListJobsForMedia(ctx context.Context, mediaItemID int64) ([]model.Job, error)
 

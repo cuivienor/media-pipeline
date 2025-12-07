@@ -434,6 +434,46 @@ func (r *SQLiteRepository) GetActiveJobForStage(ctx context.Context, mediaItemID
 	return &job, nil
 }
 
+// UpdateJob updates all fields of a job
+func (r *SQLiteRepository) UpdateJob(ctx context.Context, job *model.Job) error {
+	query := `
+		UPDATE jobs
+		SET media_item_id = ?, stage = ?, status = ?, disc = ?,
+		    worker_id = ?, pid = ?, input_dir = ?, output_dir = ?,
+		    log_path = ?, error_message = ?, started_at = ?, completed_at = ?
+		WHERE id = ?
+	`
+
+	var startedAt, completedAt interface{}
+	if job.StartedAt != nil {
+		startedAt = job.StartedAt.UTC().Format(time.RFC3339)
+	}
+	if job.CompletedAt != nil {
+		completedAt = job.CompletedAt.UTC().Format(time.RFC3339)
+	}
+
+	_, err := r.db.db.ExecContext(ctx, query,
+		job.MediaItemID,
+		job.Stage.String(),
+		job.Status,
+		job.Disc,
+		job.WorkerID,
+		job.PID,
+		job.InputDir,
+		job.OutputDir,
+		job.LogPath,
+		job.ErrorMessage,
+		startedAt,
+		completedAt,
+		job.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update job: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateJobStatus updates a job's status and optionally sets error message and completion time
 func (r *SQLiteRepository) UpdateJobStatus(ctx context.Context, id int64, status model.JobStatus, errorMsg string) error {
 	query := `

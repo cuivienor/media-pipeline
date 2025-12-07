@@ -127,10 +127,11 @@ func (s *DefaultStateManager) Complete(outputDir string) error {
 // DualWriteStateManager writes to both database and filesystem
 // Database is the authoritative source, filesystem is for debugging/compatibility
 type DualWriteStateManager struct {
-	fs     StateManager
-	repo   db.Repository
-	jobID  int64
-	itemID int64
+	fs            StateManager
+	repo          db.Repository
+	jobID         int64
+	itemID        int64
+	existingJobID int64 // Set when resuming an existing job (TUI dispatch mode)
 }
 
 // NewDualWriteStateManager creates a new DualWriteStateManager
@@ -141,10 +142,65 @@ func NewDualWriteStateManager(fs StateManager, repo db.Repository) *DualWriteSta
 	}
 }
 
+// WithJobID sets the existing job ID for TUI dispatch mode
+// Returns the manager for chaining
+func (d *DualWriteStateManager) WithJobID(jobID int64) *DualWriteStateManager {
+	d.existingJobID = jobID
+	return d
+}
+
 // Initialize creates database records and filesystem state
 func (d *DualWriteStateManager) Initialize(outputDir string, req *RipRequest) error {
 	ctx := context.Background()
 
+	// If we have an existingJobID, we're resuming a job (TUI dispatch mode)
+	if d.existingJobID > 0 {
+		return d.resumeExistingJob(ctx, outputDir, req)
+	}
+
+	// Otherwise, create new job (standalone mode)
+	return d.createNewJob(ctx, outputDir, req)
+}
+
+// resumeExistingJob updates an existing job for TUI dispatch mode
+func (d *DualWriteStateManager) resumeExistingJob(ctx context.Context, outputDir string, req *RipRequest) error {
+	// Load the existing job
+	job, err := d.repo.GetJob(ctx, d.existingJobID)
+	if err != nil {
+		return fmt.Errorf("failed to load existing job: %w", err)
+	}
+	if job == nil {
+		return fmt.Errorf("job %d not found", d.existingJobID)
+	}
+
+	// Store job ID and media item ID
+	d.jobID = job.ID
+	d.itemID = job.MediaItemID
+
+	// Update job to in_progress with current worker and output_dir
+	now := time.Now()
+	job.Status = model.JobStatusInProgress
+	job.OutputDir = outputDir
+	job.WorkerID = hostname()
+	job.PID = os.Getpid()
+	job.StartedAt = &now
+	job.ErrorMessage = "" // Clear any previous error
+
+	// Update the job in the database
+	if err := d.repo.UpdateJob(ctx, job); err != nil {
+		return fmt.Errorf("failed to update job: %w", err)
+	}
+
+	// Write filesystem state (best-effort)
+	if err := d.fs.Initialize(outputDir, req); err != nil {
+		log.Printf("WARNING: failed to write filesystem state: %v", err)
+	}
+
+	return nil
+}
+
+// createNewJob creates a new job and media item (standalone mode)
+func (d *DualWriteStateManager) createNewJob(ctx context.Context, outputDir string, req *RipRequest) error {
 	// 1. Find or create media item
 	var season *int
 	if req.Type == MediaTypeTV {

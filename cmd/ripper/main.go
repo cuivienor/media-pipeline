@@ -69,7 +69,22 @@ func main() {
 	r := ripper.NewRipper(stagingBase, runner, stateManager)
 
 	// Build request
-	req := BuildRipRequest(opts)
+	var req *ripper.RipRequest
+	if opts.JobID > 0 {
+		// Job-id mode: load request from database
+		req, err = LoadRipRequestFromJob(database, opts.JobID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		// Override disc path if specified
+		if opts.DiscPath != "" {
+			req.DiscPath = opts.DiscPath
+		}
+	} else {
+		// Standalone mode: build request from opts
+		req = BuildRipRequest(opts)
+	}
 
 	// Run the rip
 	result, err := r.Rip(context.Background(), req)
@@ -100,6 +115,11 @@ func BuildStateManager(opts *Options) (ripper.StateManager, *db.DB, error) {
 	repo := db.NewSQLiteRepository(database)
 	fsManager := ripper.NewStateManager()
 	dualManager := ripper.NewDualWriteStateManager(fsManager, repo)
+
+	// If we're in job-id mode, set the job ID on the state manager
+	if opts.JobID > 0 {
+		dualManager.WithJobID(opts.JobID)
+	}
 
 	return dualManager, database, nil
 }
@@ -222,6 +242,61 @@ func BuildRipRequest(opts *Options) *ripper.RipRequest {
 		Disc:     opts.Disc,
 		DiscPath: opts.DiscPath,
 	}
+}
+
+// LoadRipRequestFromJob loads a RipRequest from an existing database job
+func LoadRipRequestFromJob(database *db.DB, jobID int64) (*ripper.RipRequest, error) {
+	ctx := context.Background()
+	repo := db.NewSQLiteRepository(database)
+
+	// Get the job
+	job, err := repo.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get job: %w", err)
+	}
+	if job == nil {
+		return nil, fmt.Errorf("job %d not found", jobID)
+	}
+
+	// Get the media item
+	item, err := repo.GetMediaItem(ctx, job.MediaItemID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get media item: %w", err)
+	}
+	if item == nil {
+		return nil, fmt.Errorf("media item %d not found", job.MediaItemID)
+	}
+
+	// Build RipRequest from job and media item
+	req := &ripper.RipRequest{
+		Name:     item.Name,
+		DiscPath: "disc:0", // Default disc path
+	}
+
+	// Set type
+	switch item.Type {
+	case "movie":
+		req.Type = ripper.MediaTypeMovie
+	case "tv":
+		req.Type = ripper.MediaTypeTV
+	default:
+		return nil, fmt.Errorf("unknown media type: %s", item.Type)
+	}
+
+	// Set TV-specific fields
+	if req.Type == ripper.MediaTypeTV {
+		if item.Season == nil {
+			return nil, fmt.Errorf("TV show missing season number")
+		}
+		req.Season = *item.Season
+
+		if job.Disc == nil {
+			return nil, fmt.Errorf("TV show job missing disc number")
+		}
+		req.Disc = *job.Disc
+	}
+
+	return req, nil
 }
 
 // getEnvMap returns environment variables as a map

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
+	"github.com/cuivienor/media-pipeline/internal/db"
+	"github.com/cuivienor/media-pipeline/internal/model"
 	"github.com/cuivienor/media-pipeline/internal/ripper"
 )
 
@@ -378,5 +381,223 @@ func TestBuildStateManager_NoDB(t *testing.T) {
 	}
 	if database != nil {
 		t.Error("expected nil DB for no-DB mode, got non-nil")
+	}
+}
+
+func TestLoadRipRequestFromJob_Movie(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	repo := db.NewSQLiteRepository(database)
+
+	// Create a media item
+	item := &model.MediaItem{
+		Type:     model.MediaTypeMovie,
+		Name:     "The Matrix",
+		SafeName: "The_Matrix",
+	}
+	if err := repo.CreateMediaItem(ctx, item); err != nil {
+		t.Fatalf("Failed to create media item: %v", err)
+	}
+
+	// Create a job
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+	}
+	if err := repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("Failed to create job: %v", err)
+	}
+
+	// Load RipRequest from job
+	req, err := LoadRipRequestFromJob(database, job.ID)
+	if err != nil {
+		t.Fatalf("LoadRipRequestFromJob failed: %v", err)
+	}
+
+	if req.Type != ripper.MediaTypeMovie {
+		t.Errorf("Type = %v, want movie", req.Type)
+	}
+	if req.Name != "The Matrix" {
+		t.Errorf("Name = %q, want 'The Matrix'", req.Name)
+	}
+	if req.Season != 0 {
+		t.Errorf("Season = %d, want 0", req.Season)
+	}
+	if req.Disc != 0 {
+		t.Errorf("Disc = %d, want 0", req.Disc)
+	}
+}
+
+func TestLoadRipRequestFromJob_TVShow(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	repo := db.NewSQLiteRepository(database)
+
+	// Create a media item
+	season := 2
+	item := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Breaking Bad",
+		SafeName: "Breaking_Bad",
+		Season:   &season,
+	}
+	if err := repo.CreateMediaItem(ctx, item); err != nil {
+		t.Fatalf("Failed to create media item: %v", err)
+	}
+
+	// Create a job
+	disc := 3
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+		Disc:        &disc,
+	}
+	if err := repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("Failed to create job: %v", err)
+	}
+
+	// Load RipRequest from job
+	req, err := LoadRipRequestFromJob(database, job.ID)
+	if err != nil {
+		t.Fatalf("LoadRipRequestFromJob failed: %v", err)
+	}
+
+	if req.Type != ripper.MediaTypeTV {
+		t.Errorf("Type = %v, want tv", req.Type)
+	}
+	if req.Name != "Breaking Bad" {
+		t.Errorf("Name = %q, want 'Breaking Bad'", req.Name)
+	}
+	if req.Season != 2 {
+		t.Errorf("Season = %d, want 2", req.Season)
+	}
+	if req.Disc != 3 {
+		t.Errorf("Disc = %d, want 3", req.Disc)
+	}
+}
+
+func TestLoadRipRequestFromJob_JobNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	// Try to load non-existent job
+	_, err = LoadRipRequestFromJob(database, 999)
+	if err == nil {
+		t.Error("Expected error for non-existent job")
+	}
+}
+
+func TestLoadRipRequestFromJob_TVMissingSeason(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	repo := db.NewSQLiteRepository(database)
+
+	// Create a TV media item without season (invalid)
+	item := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Breaking Bad",
+		SafeName: "Breaking_Bad",
+		Season:   nil, // Missing season
+	}
+	if err := repo.CreateMediaItem(ctx, item); err != nil {
+		t.Fatalf("Failed to create media item: %v", err)
+	}
+
+	// Create a job
+	disc := 1
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+		Disc:        &disc,
+	}
+	if err := repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("Failed to create job: %v", err)
+	}
+
+	// Load RipRequest from job should fail
+	_, err = LoadRipRequestFromJob(database, job.ID)
+	if err == nil {
+		t.Error("Expected error for TV show missing season")
+	}
+}
+
+func TestLoadRipRequestFromJob_TVMissingDisc(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "test.db")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
+	}
+	defer database.Close()
+
+	ctx := context.Background()
+	repo := db.NewSQLiteRepository(database)
+
+	// Create a TV media item
+	season := 1
+	item := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Breaking Bad",
+		SafeName: "Breaking_Bad",
+		Season:   &season,
+	}
+	if err := repo.CreateMediaItem(ctx, item); err != nil {
+		t.Fatalf("Failed to create media item: %v", err)
+	}
+
+	// Create a job without disc (invalid)
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+		Disc:        nil, // Missing disc
+	}
+	if err := repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("Failed to create job: %v", err)
+	}
+
+	// Load RipRequest from job should fail
+	_, err = LoadRipRequestFromJob(database, job.ID)
+	if err == nil {
+		t.Error("Expected error for TV show job missing disc")
 	}
 }

@@ -319,3 +319,146 @@ func TestDualWriteStateManager_FilesystemFailureDoesNotFailOperation(t *testing.
 		t.Errorf("expected 1 job in DB, got %d", len(jobs))
 	}
 }
+
+func TestDualWriteStateManager_WithJobID_ResumesExistingJob(t *testing.T) {
+	env := testenv.New(t)
+	dbFixture := testenv.NewDBFixture(t)
+
+	ctx := context.Background()
+
+	// Pre-create a media item and pending job (simulating TUI dispatch)
+	item := dbFixture.CreateMovie("Resume Test", "Resume_Test")
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+	}
+	if err := dbFixture.Repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("failed to create pending job: %v", err)
+	}
+
+	// Create state manager with job ID
+	dm := NewDualWriteStateManager(
+		NewStateManager(),
+		dbFixture.Repo,
+	).WithJobID(job.ID)
+
+	req := &RipRequest{
+		Type: MediaTypeMovie,
+		Name: "Resume Test",
+	}
+
+	outputDir := filepath.Join(env.RippedMoviesDir(), "Resume_Test")
+
+	// Initialize should resume the existing job, not create a new one
+	if err := dm.Initialize(outputDir, req); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Verify filesystem state created
+	stateDir, err := testenv.FindStateDir(outputDir, ".rip")
+	if err != nil {
+		t.Fatal("filesystem state not created")
+	}
+	stateDir.AssertStatus(t, model.StatusInProgress)
+
+	// Verify job was updated (not duplicated)
+	jobs, err := dbFixture.Repo.ListJobsForMedia(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("failed to list jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Errorf("expected 1 job (resumed), got %d", len(jobs))
+	}
+
+	// Verify job was updated to in_progress
+	updatedJob := jobs[0]
+	if updatedJob.Status != model.JobStatusInProgress {
+		t.Errorf("job status = %v, want in_progress", updatedJob.Status)
+	}
+	if updatedJob.OutputDir != outputDir {
+		t.Errorf("job output_dir = %q, want %q", updatedJob.OutputDir, outputDir)
+	}
+	if updatedJob.StartedAt == nil {
+		t.Error("job started_at should be set")
+	}
+}
+
+func TestDualWriteStateManager_WithJobID_TVShow(t *testing.T) {
+	env := testenv.New(t)
+	dbFixture := testenv.NewDBFixture(t)
+
+	ctx := context.Background()
+
+	// Pre-create a TV show item and pending job
+	season := 2
+	disc := 3
+	item := dbFixture.CreateTVSeason("Test Show", "Test_Show", season)
+	job := &model.Job{
+		MediaItemID: item.ID,
+		Stage:       model.StageRip,
+		Status:      model.JobStatusPending,
+		Disc:        &disc,
+	}
+	if err := dbFixture.Repo.CreateJob(ctx, job); err != nil {
+		t.Fatalf("failed to create pending job: %v", err)
+	}
+
+	// Create state manager with job ID
+	dm := NewDualWriteStateManager(
+		NewStateManager(),
+		dbFixture.Repo,
+	).WithJobID(job.ID)
+
+	req := &RipRequest{
+		Type:   MediaTypeTV,
+		Name:   "Test Show",
+		Season: 2,
+		Disc:   3,
+	}
+
+	outputDir := filepath.Join(env.RippedTVDir(), "Test_Show_S02_D03")
+
+	// Initialize should resume the existing job
+	if err := dm.Initialize(outputDir, req); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// Verify no duplicate jobs
+	jobs, err := dbFixture.Repo.ListJobsForMedia(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("failed to list jobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Errorf("expected 1 job, got %d", len(jobs))
+	}
+
+	// Verify job has correct disc
+	if jobs[0].Disc == nil || *jobs[0].Disc != 3 {
+		t.Errorf("job disc = %v, want 3", jobs[0].Disc)
+	}
+}
+
+func TestDualWriteStateManager_WithJobID_JobNotFound(t *testing.T) {
+	env := testenv.New(t)
+	dbFixture := testenv.NewDBFixture(t)
+
+	// Create state manager with non-existent job ID
+	dm := NewDualWriteStateManager(
+		NewStateManager(),
+		dbFixture.Repo,
+	).WithJobID(999)
+
+	req := &RipRequest{
+		Type: MediaTypeMovie,
+		Name: "Test",
+	}
+
+	outputDir := filepath.Join(env.RippedMoviesDir(), "Test")
+
+	// Initialize should fail because job doesn't exist
+	err := dm.Initialize(outputDir, req)
+	if err == nil {
+		t.Error("expected error for non-existent job")
+	}
+}
