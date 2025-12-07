@@ -6,22 +6,25 @@ import "time"
 type Stage int
 
 const (
-	StageRipped Stage = iota
-	StageRemuxed
-	StageTranscoded
-	StageInLibrary
+	StageRip Stage = iota
+	StageOrganize
+	StageRemux
+	StageTranscode
+	StagePublish
 )
 
 func (s Stage) String() string {
 	switch s {
-	case StageRipped:
-		return "ripped"
-	case StageRemuxed:
-		return "remuxed"
-	case StageTranscoded:
-		return "transcoded"
-	case StageInLibrary:
-		return "in_library"
+	case StageRip:
+		return "rip"
+	case StageOrganize:
+		return "organize"
+	case StageRemux:
+		return "remux"
+	case StageTranscode:
+		return "transcode"
+	case StagePublish:
+		return "publish"
 	default:
 		return "unknown"
 	}
@@ -29,13 +32,15 @@ func (s Stage) String() string {
 
 func (s Stage) DisplayName() string {
 	switch s {
-	case StageRipped:
+	case StageRip:
 		return "1-Ripped"
-	case StageRemuxed:
-		return "2-Remuxed"
-	case StageTranscoded:
-		return "3-Transcoded"
-	case StageInLibrary:
+	case StageOrganize:
+		return "2-Organized"
+	case StageRemux:
+		return "3-Remuxed"
+	case StageTranscode:
+		return "4-Transcoded"
+	case StagePublish:
 		return "Library"
 	default:
 		return "Unknown"
@@ -44,26 +49,30 @@ func (s Stage) DisplayName() string {
 
 func (s Stage) NextStage() Stage {
 	switch s {
-	case StageRipped:
-		return StageRemuxed
-	case StageRemuxed:
-		return StageTranscoded
-	case StageTranscoded:
-		return StageInLibrary
+	case StageRip:
+		return StageOrganize
+	case StageOrganize:
+		return StageRemux
+	case StageRemux:
+		return StageTranscode
+	case StageTranscode:
+		return StagePublish
 	default:
-		return StageInLibrary
+		return StagePublish
 	}
 }
 
 func (s Stage) NextAction() string {
 	switch s {
-	case StageRipped:
+	case StageRip:
+		return "needs organize"
+	case StageOrganize:
 		return "needs remux"
-	case StageRemuxed:
+	case StageRemux:
 		return "needs transcode"
-	case StageTranscoded:
-		return "needs filebot"
-	case StageInLibrary:
+	case StageTranscode:
+		return "needs publish"
+	case StagePublish:
 		return "complete"
 	default:
 		return "unknown"
@@ -121,7 +130,7 @@ func (m *MediaItem) UniqueKey() string {
 
 // IsReadyForNextStage returns true if the item has completed its current stage
 func (m *MediaItem) IsReadyForNextStage() bool {
-	return m.Status == StatusCompleted && m.Current != StageInLibrary
+	return m.Status == StatusCompleted && m.Current != StagePublish
 }
 
 // IsFailed returns true if the item is in a failed state

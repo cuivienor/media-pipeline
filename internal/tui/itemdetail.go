@@ -42,10 +42,11 @@ func (a *App) renderItemDetail() string {
 
 	// Define all stages in order
 	allStages := []model.Stage{
-		model.StageRipped,
-		model.StageRemuxed,
-		model.StageTranscoded,
-		model.StageInLibrary,
+		model.StageRip,
+		model.StageOrganize,
+		model.StageRemux,
+		model.StageTranscode,
+		model.StagePublish,
 	}
 
 	for _, stage := range allStages {

@@ -181,8 +181,8 @@ func TestRipper_E2E_StateCompatibleWithScanner(t *testing.T) {
 		if movie.Name != "Scanner Test Movie" {
 			t.Errorf("Movie name = %q, want 'Scanner Test Movie'", movie.Name)
 		}
-		if movie.Current != model.StageRipped {
-			t.Errorf("Current = %v, want %v", movie.Current, model.StageRipped)
+		if movie.Current != model.StageRip {
+			t.Errorf("Current = %v, want %v", movie.Current, model.StageRip)
 		}
 		if movie.Status != model.StatusCompleted {
 			t.Errorf("Status = %v, want completed", movie.Status)

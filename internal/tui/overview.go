@@ -35,10 +35,11 @@ func (a *App) renderOverview() string {
 
 	// Render each stage
 	stages := []model.Stage{
-		model.StageRipped,
-		model.StageRemuxed,
-		model.StageTranscoded,
-		model.StageInLibrary,
+		model.StageRip,
+		model.StageOrganize,
+		model.StageRemux,
+		model.StageTranscode,
+		model.StagePublish,
 	}
 
 	for i, stage := range stages {

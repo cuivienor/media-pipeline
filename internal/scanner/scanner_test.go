@@ -60,8 +60,8 @@ func TestScanPipeline_SingleMovieRipped(t *testing.T) {
 	if item.SafeName != "Test_Movie" {
 		t.Errorf("item.SafeName = %v, want 'Test_Movie'", item.SafeName)
 	}
-	if item.Current != model.StageRipped {
-		t.Errorf("item.Current = %v, want StageRipped", item.Current)
+	if item.Current != model.StageRip {
+		t.Errorf("item.Current = %v, want StageRip", item.Current)
 	}
 	if item.Status != model.StatusCompleted {
 		t.Errorf("item.Status = %v, want StatusCompleted", item.Status)
@@ -93,9 +93,9 @@ func TestScanPipeline_TVShowMultiSeason(t *testing.T) {
 	if item.SafeName != "Breaking_Bad" {
 		t.Errorf("item.SafeName = %v, want 'Breaking_Bad'", item.SafeName)
 	}
-	// Should be at remuxed stage (furthest completed)
-	if item.Current != model.StageRemuxed {
-		t.Errorf("item.Current = %v, want StageRemuxed", item.Current)
+	// Should be at remux stage (furthest completed)
+	if item.Current != model.StageRemux {
+		t.Errorf("item.Current = %v, want StageRemux", item.Current)
 	}
 	// Should have 2 stage entries in history
 	if len(item.Stages) != 2 {

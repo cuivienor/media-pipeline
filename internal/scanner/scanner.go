@@ -69,26 +69,26 @@ func (s *Scanner) ScanPipeline() (*model.PipelineState, error) {
 	var results []stageResult
 
 	// Scan each stage
-	rippedResults, err := s.scanStage(model.StageRipped, "1-ripped", ".rip")
+	rippedResults, err := s.scanStage(model.StageRip, "1-ripped", ".rip")
 	if err != nil {
 		return nil, err
 	}
 	results = append(results, rippedResults...)
 
-	remuxedResults, err := s.scanStage(model.StageRemuxed, "2-remuxed", ".remux")
+	remuxedResults, err := s.scanStage(model.StageRemux, "2-remuxed", ".remux")
 	if err != nil {
 		return nil, err
 	}
 	results = append(results, remuxedResults...)
 
-	transcodedResults, err := s.scanStage(model.StageTranscoded, "3-transcoded", ".transcode")
+	transcodedResults, err := s.scanStage(model.StageTranscode, "3-transcoded", ".transcode")
 	if err != nil {
 		return nil, err
 	}
 	results = append(results, transcodedResults...)
 
 	// Also check for .filebot directories in 3-transcoded (indicates filebot was run)
-	filebotResults, err := s.scanStage(model.StageInLibrary, "3-transcoded", ".filebot")
+	filebotResults, err := s.scanStage(model.StagePublish, "3-transcoded", ".filebot")
 	if err != nil {
 		return nil, err
 	}
