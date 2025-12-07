@@ -1,4 +1,4 @@
-.PHONY: build build-local build-all build-mock-makemkv build-ripper deploy run-remote clean test test-contracts test-e2e test-all fmt vet deploy-dev dev
+.PHONY: build build-local build-all build-mock-makemkv build-ripper build-stubs deploy run-remote clean test test-contracts test-e2e test-all fmt vet deploy-dev dev
 
 # Build for Linux (production target)
 build:
@@ -16,8 +16,14 @@ build-mock-makemkv:
 build-ripper:
 	go build -o bin/ripper ./cmd/ripper
 
+# Build stub stage commands (remux, transcode, publish)
+build-stubs:
+	go build -o bin/remux ./cmd/remux
+	go build -o bin/transcode ./cmd/transcode
+	go build -o bin/publish ./cmd/publish
+
 # Build all binaries for local development
-build-all: build-local build-mock-makemkv build-ripper
+build-all: build-local build-mock-makemkv build-ripper build-stubs
 
 # Deploy to analyzer container
 deploy: build
@@ -70,8 +76,11 @@ deploy-dev:
 	GOOS=linux GOARCH=amd64 go build -o bin/media-pipeline ./cmd/media-pipeline
 	GOOS=linux GOARCH=amd64 go build -o bin/ripper ./cmd/ripper
 	GOOS=linux GOARCH=amd64 go build -o bin/mock-makemkv ./cmd/mock-makemkv
-	ssh $(TEST_HOST) 'mkdir -p $(DEV_BIN) && rm -f $(DEV_BIN)/media-pipeline $(DEV_BIN)/ripper $(DEV_BIN)/mock-makemkv'
-	scp bin/media-pipeline bin/ripper bin/mock-makemkv $(TEST_HOST):$(DEV_BIN)/
+	GOOS=linux GOARCH=amd64 go build -o bin/remux ./cmd/remux
+	GOOS=linux GOARCH=amd64 go build -o bin/transcode ./cmd/transcode
+	GOOS=linux GOARCH=amd64 go build -o bin/publish ./cmd/publish
+	ssh $(TEST_HOST) 'mkdir -p $(DEV_BIN) && rm -f $(DEV_BIN)/*'
+	scp bin/media-pipeline bin/ripper bin/mock-makemkv bin/remux bin/transcode bin/publish $(TEST_HOST):$(DEV_BIN)/
 
 # Deploy and run TUI interactively on test container
 dev: deploy-dev
