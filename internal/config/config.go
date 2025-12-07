@@ -8,22 +8,46 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultMediaBase = "/mnt/media"
+	pipelineDirName  = "pipeline"
+	configFileName   = "config.yaml"
+)
+
 // Config holds application configuration
 type Config struct {
-	DataDir     string            `yaml:"data_dir"`     // App data: db, logs
 	StagingBase string            `yaml:"staging_base"` // Staging directory
 	LibraryBase string            `yaml:"library_base"` // Library directory
 	Dispatch    map[string]string `yaml:"dispatch"`     // SSH targets per stage
+
+	// Derived from environment, not stored in YAML
+	mediaBase string
+}
+
+// MediaBase returns the MEDIA_BASE path
+func (c *Config) MediaBase() string {
+	if c.mediaBase != "" {
+		return c.mediaBase
+	}
+	if base := os.Getenv("MEDIA_BASE"); base != "" {
+		return base
+	}
+	return defaultMediaBase
+}
+
+// DataDir returns the pipeline data directory ($MEDIA_BASE/pipeline)
+func (c *Config) DataDir() string {
+	return filepath.Join(c.MediaBase(), pipelineDirName)
 }
 
 // DatabasePath returns the path to the SQLite database
 func (c *Config) DatabasePath() string {
-	return filepath.Join(c.DataDir, "pipeline.db")
+	return filepath.Join(c.DataDir(), "pipeline.db")
 }
 
 // JobLogDir returns the directory for a job's log files
 func (c *Config) JobLogDir(jobID int64) string {
-	return filepath.Join(c.DataDir, "logs", "jobs", fmt.Sprintf("%d", jobID))
+	return filepath.Join(c.DataDir(), "logs", "jobs", fmt.Sprintf("%d", jobID))
 }
 
 // JobLogPath returns the path for a job's main log file
@@ -87,4 +111,21 @@ func LoadDefault() (*Config, error) {
 
 	path := filepath.Join(home, ".config", "media-pipeline", "config.yaml")
 	return Load(path)
+}
+
+// LoadFromMediaBase loads config from $MEDIA_BASE/pipeline/config.yaml
+func LoadFromMediaBase() (*Config, error) {
+	mediaBase := os.Getenv("MEDIA_BASE")
+	if mediaBase == "" {
+		mediaBase = defaultMediaBase
+	}
+
+	configPath := filepath.Join(mediaBase, pipelineDirName, configFileName)
+	cfg, err := Load(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.mediaBase = mediaBase
+	return cfg, nil
 }
