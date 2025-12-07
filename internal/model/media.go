@@ -112,6 +112,7 @@ type StageInfo struct {
 
 // MediaItem represents a single media item (movie or TV season) in the pipeline
 type MediaItem struct {
+	ID       int64     // Database ID (0 if not persisted)
 	Type     MediaType // "movie" or "tv"
 	Name     string    // Human-readable name like "The Lion King"
 	SafeName string    // Filesystem-safe name like "The_Lion_King"
