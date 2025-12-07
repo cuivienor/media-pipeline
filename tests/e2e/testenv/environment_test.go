@@ -89,17 +89,8 @@ func TestEnvVars_PrependsMockBinDir(t *testing.T) {
 	}
 }
 
-func TestScannerConfig_ReturnsValidConfig(t *testing.T) {
-	env := New(t)
-	cfg := env.ScannerConfig()
-
-	if cfg.StagingBase != env.StagingBase {
-		t.Errorf("ScannerConfig.StagingBase = %q, want %q", cfg.StagingBase, env.StagingBase)
-	}
-	if cfg.LibraryBase != env.LibraryBase {
-		t.Errorf("ScannerConfig.LibraryBase = %q, want %q", cfg.LibraryBase, env.LibraryBase)
-	}
-}
+// TestScannerConfig_ReturnsValidConfig has been removed as scanner was removed
+// in favor of database-backed state. See Task 3 of Phase 2 TUI Database Integration.
 
 func TestCleanup_RemovesAllFiles(t *testing.T) {
 	// Create a nested test to capture the cleanup behavior

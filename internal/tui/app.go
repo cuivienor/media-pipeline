@@ -4,8 +4,9 @@ import (
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/cuivienor/media-pipeline/internal/config"
+	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/model"
-	"github.com/cuivienor/media-pipeline/internal/scanner"
 )
 
 // View represents the current view
@@ -20,9 +21,10 @@ const (
 
 // App is the main application model
 type App struct {
-	scanner *scanner.Scanner
-	state   *model.PipelineState
-	err     error
+	config *config.Config
+	repo   db.Repository
+	state  *PipelineState
+	err    error
 
 	// Navigation state
 	currentView   View
@@ -36,28 +38,29 @@ type App struct {
 }
 
 // NewApp creates a new application instance
-func NewApp(config scanner.Config) *App {
+func NewApp(cfg *config.Config, repo db.Repository) *App {
 	return &App{
-		scanner:     scanner.New(config),
+		config:      cfg,
+		repo:        repo,
 		currentView: ViewOverview,
 	}
 }
 
 // Init implements tea.Model
 func (a *App) Init() tea.Cmd {
-	return a.scanPipeline
+	return a.loadState
 }
 
-// scanMsg is sent when a scan completes
-type scanMsg struct {
-	state *model.PipelineState
+// stateMsg is sent when state loading completes
+type stateMsg struct {
+	state *PipelineState
 	err   error
 }
 
-// scanPipeline performs a filesystem scan
-func (a *App) scanPipeline() tea.Msg {
-	state, err := a.scanner.ScanPipeline()
-	return scanMsg{state: state, err: err}
+// loadState loads pipeline state from the database
+func (a *App) loadState() tea.Msg {
+	state, err := LoadState(a.repo)
+	return stateMsg{state: state, err: err}
 }
 
 // Update implements tea.Model
@@ -71,7 +74,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 		return a, nil
 
-	case scanMsg:
+	case stateMsg:
 		a.state = msg.state
 		a.err = msg.err
 		return a, nil
@@ -88,7 +91,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		// Refresh
-		return a, a.scanPipeline
+		return a, a.loadState
 
 	case "tab":
 		// Toggle between overview and action needed

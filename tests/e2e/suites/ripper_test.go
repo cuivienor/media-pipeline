@@ -10,7 +10,6 @@ import (
 
 	"github.com/cuivienor/media-pipeline/internal/model"
 	"github.com/cuivienor/media-pipeline/internal/ripper"
-	"github.com/cuivienor/media-pipeline/internal/scanner"
 	"github.com/cuivienor/media-pipeline/tests/e2e/testenv"
 )
 
@@ -136,59 +135,8 @@ func TestRipper_E2E_TVShowRip(t *testing.T) {
 	stateDir.AssertStatus(t, model.StatusCompleted)
 }
 
-func TestRipper_E2E_StateCompatibleWithScanner(t *testing.T) {
-	requireFFmpeg(t)
-	mockPath := findMockMakeMKV(t)
-
-	// Set up test environment
-	env := testenv.New(t)
-
-	// Create ripper with mock-makemkv
-	runner := ripper.NewMakeMKVRunner(mockPath)
-	r := ripper.NewRipper(env.StagingBase, runner, nil)
-
-	// Create and run request
-	req := &ripper.RipRequest{
-		Type:     ripper.MediaTypeMovie,
-		Name:     "Scanner Test Movie",
-		DiscPath: "disc:0",
-	}
-
-	_, err := r.Rip(context.Background(), req)
-	if err != nil {
-		t.Fatalf("Rip failed: %v", err)
-	}
-
-	// Use the scanner to read the state
-	config := env.ScannerConfig()
-	s := scanner.New(config)
-
-	state, err := s.ScanPipeline()
-	if err != nil {
-		t.Fatalf("Scanner.ScanPipeline failed: %v", err)
-	}
-
-	// Filter to get only movies
-	movies := filterByType(state.Items, model.MediaTypeMovie)
-
-	// Verify scanner found the movie
-	if len(movies) != 1 {
-		t.Errorf("Expected 1 movie, got %d", len(movies))
-	}
-
-	if len(movies) > 0 {
-		movie := movies[0]
-		if movie.Name != "Scanner Test Movie" {
-			t.Errorf("Movie name = %q, want 'Scanner Test Movie'", movie.Name)
-		}
-		if movie.Current != model.StageRip {
-			t.Errorf("Current = %v, want %v", movie.Current, model.StageRip)
-		}
-		if movie.Status != model.StatusCompleted {
-			t.Errorf("Status = %v, want completed", movie.Status)
-		}
-	}
-}
+// TestRipper_E2E_StateCompatibleWithScanner has been removed as scanner was removed
+// in favor of database-backed state. See Task 3 of Phase 2 TUI Database Integration.
 
 func TestRipper_E2E_MultipleTVShowDiscs(t *testing.T) {
 	requireFFmpeg(t)

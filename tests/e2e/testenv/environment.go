@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/cuivienor/media-pipeline/internal/scanner"
 )
 
 // Environment manages test filesystem state for E2E tests
@@ -71,14 +69,6 @@ func (e *Environment) EnvVars() []string {
 	return []string{
 		"MEDIA_BASE=" + e.BaseDir,
 		"PATH=" + newPath,
-	}
-}
-
-// ScannerConfig returns a scanner.Config configured for this test environment
-func (e *Environment) ScannerConfig() scanner.Config {
-	return scanner.Config{
-		StagingBase: e.StagingBase,
-		LibraryBase: e.LibraryBase,
 	}
 }
 

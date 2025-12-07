@@ -12,8 +12,6 @@ func (a *App) renderOverview() string {
 	var b strings.Builder
 
 	b.WriteString(titleStyle.Render("Media Pipeline"))
-	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render(fmt.Sprintf("Scanned at %s", a.state.ScannedAt.Format("15:04:05"))))
 	b.WriteString("\n\n")
 
 	// Calculate total items
