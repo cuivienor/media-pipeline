@@ -10,6 +10,7 @@ import (
 
 	"github.com/cuivienor/media-pipeline/internal/config"
 	"github.com/cuivienor/media-pipeline/internal/db"
+	"github.com/cuivienor/media-pipeline/internal/logging"
 	"github.com/cuivienor/media-pipeline/internal/model"
 	"github.com/cuivienor/media-pipeline/internal/remux"
 )
@@ -63,17 +64,36 @@ func run(jobID int64, dbPath string) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Set up logging
+	if err := cfg.EnsureJobLogDir(jobID); err != nil {
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+	logPath := cfg.JobLogPath(jobID)
+	logger, err := logging.NewForJob(logPath, true, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+	defer logger.Close()
+
+	logger.Info("Starting remux: type=%s name=%q", item.Type, item.Name)
+
 	// Find input directory from organize job
 	inputDir, err := findOrganizeOutput(ctx, repo, job)
 	if err != nil {
+		logger.Error("Failed to find input: %v", err)
 		return fmt.Errorf("failed to find input: %w", err)
 	}
 
 	// Determine output directory
 	outputDir, err := buildOutputPath(ctx, repo, cfg, item, job)
 	if err != nil {
+		logger.Error("Failed to build output path: %v", err)
 		return fmt.Errorf("failed to build output path: %w", err)
 	}
+
+	logger.Info("Input directory: %s", inputDir)
+	logger.Info("Output directory: %s", outputDir)
+	logger.Info("Languages to keep: %v", cfg.RemuxLanguages())
 
 	// Update job to in_progress with input/output paths
 	job.Status = model.JobStatusInProgress
@@ -85,20 +105,18 @@ func run(jobID int64, dbPath string) error {
 		return fmt.Errorf("failed to update job status: %w", err)
 	}
 
-	fmt.Printf("Remux: %s\n", item.Name)
-	fmt.Printf("  Input:  %s\n", inputDir)
-	fmt.Printf("  Output: %s\n", outputDir)
-	fmt.Printf("  Languages: %v\n", cfg.RemuxLanguages())
-
 	// Create remuxer and process
 	remuxer := remux.NewRemuxer(cfg.RemuxLanguages())
 	isTV := item.Type == model.MediaTypeTV
 
+	logger.Info("Starting track filtering...")
+
 	results, err := remuxer.RemuxDirectory(ctx, inputDir, outputDir, isTV)
 	if err != nil {
+		logger.Error("Remux failed: %v", err)
 		// Mark job as failed
 		if updateErr := repo.UpdateJobStatus(ctx, jobID, model.JobStatusFailed, err.Error()); updateErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to update job status: %v\n", updateErr)
+			logger.Error("Failed to update job status: %v", updateErr)
 		}
 		return err
 	}
@@ -106,11 +124,14 @@ func run(jobID int64, dbPath string) error {
 	// Log results
 	totalRemoved := 0
 	for _, r := range results {
-		fmt.Printf("  Processed: %s (%d tracks removed)\n",
-			filepath.Base(r.InputPath), r.TracksRemoved)
+		logger.Info("Processed: %s (input: %d audio, %d subs -> output: %d audio, %d subs, %d tracks removed)",
+			filepath.Base(r.InputPath),
+			r.InputTracks.Audio, r.InputTracks.Subtitles,
+			r.OutputTracks.Audio, r.OutputTracks.Subtitles,
+			r.TracksRemoved)
 		totalRemoved += r.TracksRemoved
 	}
-	fmt.Printf("  Total: %d files, %d tracks removed\n", len(results), totalRemoved)
+	logger.Info("Total: %d files processed, %d tracks removed", len(results), totalRemoved)
 
 	// Mark job as complete
 	if err := repo.UpdateJobStatus(ctx, jobID, model.JobStatusCompleted, ""); err != nil {
@@ -122,7 +143,7 @@ func run(jobID int64, dbPath string) error {
 		return fmt.Errorf("failed to update item stage: %w", err)
 	}
 
-	fmt.Println("Remux complete!")
+	logger.Info("Remux finished successfully")
 	return nil
 }
 
