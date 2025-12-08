@@ -1003,3 +1003,244 @@ func TestSQLiteRepository_GetDiscProgress(t *testing.T) {
 		}
 	})
 }
+
+func TestSQLiteRepository_CreateSeason(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory() error = %v", err)
+	}
+	defer db.Close()
+
+	repo := NewSQLiteRepository(db)
+	ctx := context.Background()
+
+	// Create a TV show first
+	show := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Test Show",
+		SafeName: "Test_Show",
+	}
+	if err := repo.CreateMediaItem(ctx, show); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	t.Run("create season", func(t *testing.T) {
+		season := &model.Season{
+			ItemID:       show.ID,
+			Number:       1,
+			CurrentStage: model.StageRip,
+			StageStatus:  model.StatusPending,
+		}
+
+		err := repo.CreateSeason(ctx, season)
+		if err != nil {
+			t.Fatalf("CreateSeason() error = %v", err)
+		}
+
+		if season.ID == 0 {
+			t.Error("ID not set after creation")
+		}
+	})
+
+	t.Run("duplicate season number fails", func(t *testing.T) {
+		season := &model.Season{
+			ItemID:       show.ID,
+			Number:       1, // Same as above
+			CurrentStage: model.StageRip,
+			StageStatus:  model.StatusPending,
+		}
+
+		err := repo.CreateSeason(ctx, season)
+		if err == nil {
+			t.Error("expected error for duplicate season number, got nil")
+		}
+	})
+}
+
+func TestSQLiteRepository_GetSeason(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory() error = %v", err)
+	}
+	defer db.Close()
+
+	repo := NewSQLiteRepository(db)
+	ctx := context.Background()
+
+	// Create a TV show and season
+	show := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Test Show",
+		SafeName: "Test_Show",
+	}
+	if err := repo.CreateMediaItem(ctx, show); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	created := &model.Season{
+		ItemID:       show.ID,
+		Number:       1,
+		CurrentStage: model.StageRemux,
+		StageStatus:  model.StatusInProgress,
+	}
+	if err := repo.CreateSeason(ctx, created); err != nil {
+		t.Fatalf("CreateSeason() error = %v", err)
+	}
+
+	t.Run("get existing season", func(t *testing.T) {
+		season, err := repo.GetSeason(ctx, created.ID)
+		if err != nil {
+			t.Fatalf("GetSeason() error = %v", err)
+		}
+
+		if season.ID != created.ID {
+			t.Errorf("ID = %d, want %d", season.ID, created.ID)
+		}
+		if season.ItemID != show.ID {
+			t.Errorf("ItemID = %d, want %d", season.ItemID, show.ID)
+		}
+		if season.Number != 1 {
+			t.Errorf("Number = %d, want 1", season.Number)
+		}
+		if season.CurrentStage != model.StageRemux {
+			t.Errorf("CurrentStage = %v, want %v", season.CurrentStage, model.StageRemux)
+		}
+		if season.StageStatus != model.StatusInProgress {
+			t.Errorf("StageStatus = %v, want %v", season.StageStatus, model.StatusInProgress)
+		}
+	})
+
+	t.Run("get nonexistent season", func(t *testing.T) {
+		season, err := repo.GetSeason(ctx, 99999)
+		if err != nil {
+			t.Fatalf("GetSeason() error = %v", err)
+		}
+		if season != nil {
+			t.Error("expected nil for nonexistent season")
+		}
+	})
+}
+
+func TestSQLiteRepository_ListSeasonsForItem(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory() error = %v", err)
+	}
+	defer db.Close()
+
+	repo := NewSQLiteRepository(db)
+	ctx := context.Background()
+
+	// Create a TV show with multiple seasons
+	show := &model.MediaItem{
+		Type:     model.MediaTypeTV,
+		Name:     "Test Show",
+		SafeName: "Test_Show",
+	}
+	if err := repo.CreateMediaItem(ctx, show); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	// Create seasons out of order
+	for _, num := range []int{3, 1, 2} {
+		season := &model.Season{
+			ItemID:       show.ID,
+			Number:       num,
+			CurrentStage: model.StageRip,
+			StageStatus:  model.StatusPending,
+		}
+		if err := repo.CreateSeason(ctx, season); err != nil {
+			t.Fatalf("CreateSeason(season %d) error = %v", num, err)
+		}
+	}
+
+	t.Run("list seasons returns in order", func(t *testing.T) {
+		seasons, err := repo.ListSeasonsForItem(ctx, show.ID)
+		if err != nil {
+			t.Fatalf("ListSeasonsForItem() error = %v", err)
+		}
+
+		if len(seasons) != 3 {
+			t.Fatalf("len(seasons) = %d, want 3", len(seasons))
+		}
+
+		// Should be ordered by number: 1, 2, 3
+		for i, season := range seasons {
+			expectedNum := i + 1
+			if season.Number != expectedNum {
+				t.Errorf("seasons[%d].Number = %d, want %d", i, season.Number, expectedNum)
+			}
+		}
+	})
+
+	t.Run("list seasons for nonexistent item", func(t *testing.T) {
+		seasons, err := repo.ListSeasonsForItem(ctx, 99999)
+		if err != nil {
+			t.Fatalf("ListSeasonsForItem() error = %v", err)
+		}
+		if len(seasons) != 0 {
+			t.Errorf("len(seasons) = %d, want 0", len(seasons))
+		}
+	})
+}
+
+func TestSQLiteRepository_ListActiveItems(t *testing.T) {
+	db, err := OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory() error = %v", err)
+	}
+	defer db.Close()
+
+	repo := NewSQLiteRepository(db)
+	ctx := context.Background()
+
+	// Create items with different statuses
+	activeMovie := &model.MediaItem{
+		Type:       model.MediaTypeMovie,
+		Name:       "Active Movie",
+		SafeName:   "Active_Movie",
+		ItemStatus: model.ItemStatusActive,
+	}
+	if err := repo.CreateMediaItem(ctx, activeMovie); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	completedMovie := &model.MediaItem{
+		Type:       model.MediaTypeMovie,
+		Name:       "Completed Movie",
+		SafeName:   "Completed_Movie",
+		ItemStatus: model.ItemStatusCompleted,
+	}
+	if err := repo.CreateMediaItem(ctx, completedMovie); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	notStartedShow := &model.MediaItem{
+		Type:       model.MediaTypeTV,
+		Name:       "Not Started Show",
+		SafeName:   "Not_Started_Show",
+		ItemStatus: model.ItemStatusNotStarted,
+	}
+	if err := repo.CreateMediaItem(ctx, notStartedShow); err != nil {
+		t.Fatalf("CreateMediaItem() error = %v", err)
+	}
+
+	t.Run("excludes completed items", func(t *testing.T) {
+		items, err := repo.ListActiveItems(ctx)
+		if err != nil {
+			t.Fatalf("ListActiveItems() error = %v", err)
+		}
+
+		// Should include active and not_started, exclude completed
+		if len(items) != 2 {
+			t.Fatalf("len(items) = %d, want 2", len(items))
+		}
+
+		// Verify completed item is not in the list
+		for _, item := range items {
+			if item.ItemStatus == model.ItemStatusCompleted {
+				t.Error("completed item should not be in active items")
+			}
+		}
+	})
+}

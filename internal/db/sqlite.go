@@ -22,9 +22,20 @@ func NewSQLiteRepository(db *DB) *SQLiteRepository {
 // CreateMediaItem creates a new media item
 func (r *SQLiteRepository) CreateMediaItem(ctx context.Context, item *model.MediaItem) error {
 	query := `
-		INSERT INTO media_items (type, name, safe_name, season, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO media_items (type, name, safe_name, season, status, current_stage, stage_status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
+
+	// Set defaults if not provided
+	itemStatus := item.ItemStatus
+	if itemStatus == "" {
+		itemStatus = model.ItemStatusNotStarted
+	}
+
+	stageStatus := item.StageStatus
+	if stageStatus == "" {
+		stageStatus = model.StatusPending
+	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	result, err := r.db.db.ExecContext(ctx, query,
@@ -32,6 +43,9 @@ func (r *SQLiteRepository) CreateMediaItem(ctx context.Context, item *model.Medi
 		item.Name,
 		item.SafeName,
 		item.Season,
+		itemStatus,
+		item.CurrentStage.String(),
+		stageStatus,
 		now,
 		now,
 	)
