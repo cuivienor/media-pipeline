@@ -14,11 +14,17 @@ const (
 	configFileName   = "config.yaml"
 )
 
+// RemuxConfig holds remux-specific configuration
+type RemuxConfig struct {
+	Languages []string `yaml:"languages"`
+}
+
 // Config holds application configuration
 type Config struct {
 	StagingBase string            `yaml:"staging_base"` // Staging directory
 	LibraryBase string            `yaml:"library_base"` // Library directory
 	Dispatch    map[string]string `yaml:"dispatch"`     // SSH targets per stage
+	Remux       RemuxConfig       `yaml:"remux"`        // Remux configuration
 
 	// Derived from environment, not stored in YAML
 	mediaBase string
@@ -76,6 +82,15 @@ func (c *Config) DispatchTarget(stage string) string {
 // IsLocal returns true if the stage should run locally (no SSH)
 func (c *Config) IsLocal(stage string) bool {
 	return c.DispatchTarget(stage) == ""
+}
+
+// RemuxLanguages returns the list of languages to keep during remux
+// Defaults to ["eng"] if not configured
+func (c *Config) RemuxLanguages() []string {
+	if len(c.Remux.Languages) == 0 {
+		return []string{"eng"}
+	}
+	return c.Remux.Languages
 }
 
 // Load reads configuration from a YAML file

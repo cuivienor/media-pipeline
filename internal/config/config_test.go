@@ -313,3 +313,59 @@ func TestConfig_DataDir_FromMediaBase(t *testing.T) {
 		t.Errorf("DataDir() = %q, want /mnt/media/pipeline", got)
 	}
 }
+
+func TestConfig_RemuxLanguages(t *testing.T) {
+	tmpDir := t.TempDir()
+	pipelineDir := filepath.Join(tmpDir, "pipeline")
+	os.MkdirAll(pipelineDir, 0755)
+
+	configContent := `
+staging_base: /mnt/media/staging
+library_base: /mnt/media/library
+remux:
+  languages:
+    - eng
+    - bul
+`
+	os.WriteFile(filepath.Join(pipelineDir, "config.yaml"), []byte(configContent), 0644)
+
+	t.Setenv("MEDIA_BASE", tmpDir)
+
+	cfg, err := LoadFromMediaBase()
+	if err != nil {
+		t.Fatalf("LoadFromMediaBase() error = %v", err)
+	}
+
+	langs := cfg.RemuxLanguages()
+	if len(langs) != 2 {
+		t.Errorf("RemuxLanguages() = %v, want 2 languages", langs)
+	}
+	if langs[0] != "eng" || langs[1] != "bul" {
+		t.Errorf("RemuxLanguages() = %v, want [eng, bul]", langs)
+	}
+}
+
+func TestConfig_RemuxLanguages_Default(t *testing.T) {
+	tmpDir := t.TempDir()
+	pipelineDir := filepath.Join(tmpDir, "pipeline")
+	os.MkdirAll(pipelineDir, 0755)
+
+	// Config without remux section
+	configContent := `
+staging_base: /mnt/media/staging
+library_base: /mnt/media/library
+`
+	os.WriteFile(filepath.Join(pipelineDir, "config.yaml"), []byte(configContent), 0644)
+
+	t.Setenv("MEDIA_BASE", tmpDir)
+
+	cfg, err := LoadFromMediaBase()
+	if err != nil {
+		t.Fatalf("LoadFromMediaBase() error = %v", err)
+	}
+
+	langs := cfg.RemuxLanguages()
+	if len(langs) != 1 || langs[0] != "eng" {
+		t.Errorf("RemuxLanguages() default = %v, want [eng]", langs)
+	}
+}
