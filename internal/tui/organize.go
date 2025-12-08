@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -209,11 +210,14 @@ func (a *App) markOrganizeComplete() tea.Cmd {
 		item := a.organizeView.item
 
 		// Create completed organize job
+		now := time.Now()
 		job := &model.Job{
 			MediaItemID: item.ID,
 			Stage:       model.StageOrganize,
 			Status:      model.JobStatusCompleted,
 			OutputDir:   a.organizeView.path,
+			StartedAt:   &now,
+			CompletedAt: &now,
 		}
 		if err := a.repo.CreateJob(ctx, job); err != nil {
 			return organizeCompleteMsg{err: err}
