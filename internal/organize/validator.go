@@ -46,6 +46,8 @@ func (v *Validator) ValidateMovie(outputDir string) ValidationResult {
 }
 
 // ValidateTV validates that a TV season directory is properly organized
+// For single-disc seasons, validates the season directory directly
+// This is the legacy behavior - prefer ValidateTVDisc for multi-disc seasons
 func (v *Validator) ValidateTV(outputDir string) ValidationResult {
 	result := ValidationResult{Valid: true}
 
@@ -78,6 +80,91 @@ func (v *Validator) ValidateTV(outputDir string) ValidationResult {
 		result.Valid = false
 		for _, gap := range gaps {
 			result.Errors = append(result.Errors, fmt.Sprintf("missing episode %d", gap))
+		}
+	}
+
+	return result
+}
+
+// ValidateTVDisc validates a single disc directory within a TV season
+// Each disc should have _episodes/ with properly named files
+func (v *Validator) ValidateTVDisc(discDir string) ValidationResult {
+	result := ValidationResult{Valid: true}
+
+	// Check root is empty (except _ dirs and .rip)
+	if errs := v.checkRootEmpty(discDir); len(errs) > 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, errs...)
+	}
+
+	// Check _episodes exists
+	episodesDir := filepath.Join(discDir, "_episodes")
+	if _, err := os.Stat(episodesDir); os.IsNotExist(err) {
+		result.Valid = false
+		result.Errors = append(result.Errors, "_episodes directory not found")
+		return result
+	}
+
+	// Check episode naming
+	files, _ := filepath.Glob(filepath.Join(episodesDir, "*.mkv"))
+	episodes := v.parseEpisodeNumbers(files)
+
+	if len(episodes) == 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, "_episodes has no valid episode files")
+		return result
+	}
+
+	// Note: We don't check for gaps within a single disc since episodes may span discs
+
+	return result
+}
+
+// ValidateTVSeason validates a multi-disc TV season by checking each disc
+func (v *Validator) ValidateTVSeason(discPaths []string) ValidationResult {
+	result := ValidationResult{Valid: true}
+
+	if len(discPaths) == 0 {
+		result.Valid = false
+		result.Errors = append(result.Errors, "no disc paths provided")
+		return result
+	}
+
+	// Validate each disc and collect all episodes
+	allEpisodes := make(map[int]bool)
+
+	for _, discPath := range discPaths {
+		discName := filepath.Base(discPath)
+		discResult := v.ValidateTVDisc(discPath)
+
+		if !discResult.Valid {
+			result.Valid = false
+			for _, err := range discResult.Errors {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", discName, err))
+			}
+		}
+
+		// Collect episode numbers from this disc
+		episodesDir := filepath.Join(discPath, "_episodes")
+		files, _ := filepath.Glob(filepath.Join(episodesDir, "*.mkv"))
+		for _, ep := range v.parseEpisodeNumbers(files) {
+			allEpisodes[ep] = true
+		}
+	}
+
+	// Check for duplicate episodes across discs (warning, not error)
+	// Check for gaps in the combined episode list
+	if len(allEpisodes) > 0 {
+		var episodes []int
+		for ep := range allEpisodes {
+			episodes = append(episodes, ep)
+		}
+		sort.Ints(episodes)
+
+		if gaps := v.findGaps(episodes); len(gaps) > 0 {
+			for _, gap := range gaps {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("missing episode %d across all discs", gap))
+			}
 		}
 	}
 

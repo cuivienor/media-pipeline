@@ -322,10 +322,18 @@ func LoadRipRequestFromJob(database *db.DB, jobID int64) (*ripper.RipRequest, er
 
 	// Set TV-specific fields
 	if req.Type == ripper.MediaTypeTV {
-		if item.Season == nil {
-			return nil, fmt.Errorf("TV show missing season number")
+		// Get season number from the Season model (via job.SeasonID)
+		if job.SeasonID == nil {
+			return nil, fmt.Errorf("TV show job missing season_id")
 		}
-		req.Season = *item.Season
+		season, err := repo.GetSeason(ctx, *job.SeasonID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get season: %w", err)
+		}
+		if season == nil {
+			return nil, fmt.Errorf("season %d not found", *job.SeasonID)
+		}
+		req.Season = season.Number
 
 		if job.Disc == nil {
 			return nil, fmt.Errorf("TV show job missing disc number")

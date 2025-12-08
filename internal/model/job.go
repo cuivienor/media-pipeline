@@ -16,6 +16,7 @@ const (
 type Job struct {
 	ID           int64
 	MediaItemID  int64
+	SeasonID     *int64 // Set for TV shows, nil for movies
 	Stage        Stage
 	Status       JobStatus
 	Disc         *int

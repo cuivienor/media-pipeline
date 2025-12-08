@@ -218,11 +218,11 @@ func (r *SQLiteRepository) ListMediaItems(ctx context.Context, opts ListOptions)
 func (r *SQLiteRepository) CreateJob(ctx context.Context, job *model.Job) error {
 	query := `
 		INSERT INTO jobs (
-			media_item_id, stage, status, disc, worker_id, pid,
+			media_item_id, season_id, stage, status, disc, worker_id, pid,
 			input_dir, output_dir, log_path, error_message,
 			started_at, completed_at, created_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -237,6 +237,7 @@ func (r *SQLiteRepository) CreateJob(ctx context.Context, job *model.Job) error 
 
 	result, err := r.db.db.ExecContext(ctx, query,
 		job.MediaItemID,
+		job.SeasonID,
 		job.Stage.String(),
 		job.Status,
 		job.Disc,
@@ -266,7 +267,7 @@ func (r *SQLiteRepository) CreateJob(ctx context.Context, job *model.Job) error 
 // GetJob retrieves a job by ID
 func (r *SQLiteRepository) GetJob(ctx context.Context, id int64) (*model.Job, error) {
 	query := `
-		SELECT id, media_item_id, stage, status, disc, worker_id, pid,
+		SELECT id, media_item_id, season_id, stage, status, disc, worker_id, pid,
 		       input_dir, output_dir, log_path, error_message,
 		       started_at, completed_at, created_at
 		FROM jobs
@@ -275,7 +276,7 @@ func (r *SQLiteRepository) GetJob(ctx context.Context, id int64) (*model.Job, er
 
 	var job model.Job
 	var stageStr string
-	var disc sql.NullInt64
+	var seasonID, disc sql.NullInt64
 	var workerID, inputDir, outputDir, logPath, errorMessage sql.NullString
 	var pid sql.NullInt64
 	var startedAt, completedAt, createdAt sql.NullString
@@ -283,6 +284,7 @@ func (r *SQLiteRepository) GetJob(ctx context.Context, id int64) (*model.Job, er
 	err := r.db.db.QueryRowContext(ctx, query, id).Scan(
 		&job.ID,
 		&job.MediaItemID,
+		&seasonID,
 		&stageStr,
 		&job.Status,
 		&disc,
@@ -307,6 +309,10 @@ func (r *SQLiteRepository) GetJob(ctx context.Context, id int64) (*model.Job, er
 	job.Stage = parseStage(stageStr)
 
 	// Handle nullable fields
+	if seasonID.Valid {
+		s := seasonID.Int64
+		job.SeasonID = &s
+	}
 	if disc.Valid {
 		d := int(disc.Int64)
 		job.Disc = &d
@@ -512,7 +518,7 @@ func (r *SQLiteRepository) UpdateJobStatus(ctx context.Context, id int64, status
 // ListJobsForMedia lists all jobs for a media item
 func (r *SQLiteRepository) ListJobsForMedia(ctx context.Context, mediaItemID int64) ([]model.Job, error) {
 	query := `
-		SELECT id, media_item_id, stage, status, disc, worker_id, pid,
+		SELECT id, media_item_id, season_id, stage, status, disc, worker_id, pid,
 		       input_dir, output_dir, log_path, error_message,
 		       started_at, completed_at, created_at
 		FROM jobs
@@ -530,7 +536,7 @@ func (r *SQLiteRepository) ListJobsForMedia(ctx context.Context, mediaItemID int
 	for rows.Next() {
 		var job model.Job
 		var stageStr string
-		var disc sql.NullInt64
+		var seasonID, disc sql.NullInt64
 		var workerID, inputDir, outputDir, logPath, errorMessage sql.NullString
 		var pid sql.NullInt64
 		var startedAt, completedAt, createdAt sql.NullString
@@ -538,6 +544,7 @@ func (r *SQLiteRepository) ListJobsForMedia(ctx context.Context, mediaItemID int
 		err := rows.Scan(
 			&job.ID,
 			&job.MediaItemID,
+			&seasonID,
 			&stageStr,
 			&job.Status,
 			&disc,
@@ -559,6 +566,10 @@ func (r *SQLiteRepository) ListJobsForMedia(ctx context.Context, mediaItemID int
 		job.Stage = parseStage(stageStr)
 
 		// Handle nullable fields
+		if seasonID.Valid {
+			s := seasonID.Int64
+			job.SeasonID = &s
+		}
 		if disc.Valid {
 			d := int(disc.Int64)
 			job.Disc = &d
@@ -893,6 +904,17 @@ func (r *SQLiteRepository) UpdateMediaItemStatus(ctx context.Context, id int64, 
 	_, err := r.db.db.ExecContext(ctx, query, status, now, id)
 	if err != nil {
 		return fmt.Errorf("failed to update media item status: %w", err)
+	}
+	return nil
+}
+
+// UpdateMediaItemStage updates a media item's current stage and stage status
+func (r *SQLiteRepository) UpdateMediaItemStage(ctx context.Context, id int64, stage model.Stage, status model.Status) error {
+	query := `UPDATE media_items SET current_stage = ?, stage_status = ?, updated_at = ? WHERE id = ?`
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := r.db.db.ExecContext(ctx, query, stage.String(), status, now, id)
+	if err != nil {
+		return fmt.Errorf("failed to update media item stage: %w", err)
 	}
 	return nil
 }

@@ -10,8 +10,9 @@ import (
 
 // AppState holds the current application state
 type AppState struct {
-	Items []model.MediaItem
-	Jobs  map[int64][]model.Job // itemID or seasonID -> jobs
+	Items      []model.MediaItem
+	MovieJobs  map[int64][]model.Job  // itemID -> jobs (for movies)
+	SeasonJobs map[int64][]model.Job  // seasonID -> jobs (for TV seasons)
 }
 
 // LoadState loads application state from the database
@@ -24,8 +25,9 @@ func LoadState(repo db.Repository) (*AppState, error) {
 	}
 
 	state := &AppState{
-		Items: items,
-		Jobs:  make(map[int64][]model.Job),
+		Items:      items,
+		MovieJobs:  make(map[int64][]model.Job),
+		SeasonJobs: make(map[int64][]model.Job),
 	}
 
 	// Load seasons for TV shows, jobs for all
@@ -50,10 +52,11 @@ func LoadState(repo db.Repository) (*AppState, error) {
 				// Filter to jobs for this season
 				var seasonJobs []model.Job
 				for _, job := range jobs {
-					// TODO: After job.SeasonID is populated, filter by it
-					seasonJobs = append(seasonJobs, job)
+					if job.SeasonID != nil && *job.SeasonID == season.ID {
+						seasonJobs = append(seasonJobs, job)
+					}
 				}
-				state.Jobs[season.ID] = seasonJobs
+				state.SeasonJobs[season.ID] = seasonJobs
 			}
 		} else {
 			// Movie - load jobs directly
@@ -61,7 +64,7 @@ func LoadState(repo db.Repository) (*AppState, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to list jobs for %s: %w", item.Name, err)
 			}
-			state.Jobs[item.ID] = jobs
+			state.MovieJobs[item.ID] = jobs
 
 			// Update movie's current stage from jobs
 			if len(jobs) > 0 {

@@ -58,12 +58,12 @@ func (a *App) renderSeasonDetail() string {
 		(season.CurrentStage == model.StageRip && season.StageStatus != model.StatusInProgress) {
 		b.WriteString(sectionHeaderStyle.Render("NEXT ACTION"))
 		b.WriteString("\n")
-		b.WriteString("  Press [r] to rip a disc\n")
+		b.WriteString("  Press [s] to rip a disc\n")
 		b.WriteString("\n")
 	}
 
 	// Rip Jobs (for TV seasons, multiple discs)
-	jobs := a.state.Jobs[season.ID]
+	jobs := a.state.SeasonJobs[season.ID]
 	ripJobs := filterJobsByStage(jobs, model.StageRip)
 	if len(ripJobs) > 0 {
 		b.WriteString(sectionHeaderStyle.Render("DISC RIPS"))
@@ -107,10 +107,15 @@ func (a *App) renderSeasonDetail() string {
 		b.WriteString("\n")
 	}
 
-	// Help
-	helpText := "[r] Rip Disc  [l] View Logs  [f] View Files  [Esc] Back  [q] Quit"
+	// Help - show different options based on state
+	var helpText string
 	if season.CurrentStage == model.StageRip && season.StageStatus == model.StatusCompleted {
-		helpText = "[o] Organize  [r] Rip Another Disc  [l] View Logs  [Esc] Back  [q] Quit"
+		helpText = "[o] Organize  [s] Rip Another Disc  [r] Refresh  [Esc] Back  [q] Quit"
+	} else if season.CurrentStage == model.StageRip && len(ripJobs) > 0 {
+		// Has rip jobs, can mark done or add more
+		helpText = "[s] Rip Disc  [d] Done Ripping  [r] Refresh  [Esc] Back  [q] Quit"
+	} else {
+		helpText = "[s] Start Rip  [r] Refresh  [Esc] Back  [q] Quit"
 	}
 	b.WriteString(helpStyle.Render(helpText))
 

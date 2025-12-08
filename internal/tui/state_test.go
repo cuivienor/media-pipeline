@@ -30,8 +30,11 @@ func TestLoadState_EmptyDatabase(t *testing.T) {
 		t.Errorf("len(Items) = %d, want 0", len(state.Items))
 	}
 
-	if len(state.Jobs) != 0 {
-		t.Errorf("len(Jobs) = %d, want 0", len(state.Jobs))
+	if len(state.MovieJobs) != 0 {
+		t.Errorf("len(MovieJobs) = %d, want 0", len(state.MovieJobs))
+	}
+	if len(state.SeasonJobs) != 0 {
+		t.Errorf("len(SeasonJobs) = %d, want 0", len(state.SeasonJobs))
 	}
 }
 
@@ -74,17 +77,17 @@ func TestLoadState_ItemsWithNoJobs(t *testing.T) {
 		}
 	}
 
-	// Jobs map should have entry for the item with empty slice
-	if len(state.Jobs) != 1 {
-		t.Errorf("len(Jobs) = %d, want 1", len(state.Jobs))
+	// MovieJobs map should have entry for the item with empty slice
+	if len(state.MovieJobs) != 1 {
+		t.Errorf("len(MovieJobs) = %d, want 1", len(state.MovieJobs))
 	}
 
-	jobs, exists := state.Jobs[movie.ID]
+	jobs, exists := state.MovieJobs[movie.ID]
 	if !exists {
-		t.Errorf("Jobs[%d] does not exist in map", movie.ID)
+		t.Errorf("MovieJobs[%d] does not exist in map", movie.ID)
 	}
 	if len(jobs) != 0 {
-		t.Errorf("len(Jobs[%d]) = %d, want 0", movie.ID, len(jobs))
+		t.Errorf("len(MovieJobs[%d]) = %d, want 0", movie.ID, len(jobs))
 	}
 }
 
@@ -156,10 +159,10 @@ func TestLoadState_ItemsWithMultipleJobs(t *testing.T) {
 		t.Errorf("StageStatus = %v, want %v", item.StageStatus, model.StatusInProgress)
 	}
 
-	// Jobs map should contain all jobs
-	jobs := state.Jobs[movie.ID]
+	// MovieJobs map should contain all jobs
+	jobs := state.MovieJobs[movie.ID]
 	if len(jobs) != 3 {
-		t.Fatalf("len(Jobs[%d]) = %d, want 3", movie.ID, len(jobs))
+		t.Fatalf("len(MovieJobs[%d]) = %d, want 3", movie.ID, len(jobs))
 	}
 
 	// Jobs should be in order: rip, organize, remux

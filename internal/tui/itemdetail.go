@@ -51,21 +51,32 @@ func (a *App) renderMovieDetail(item *model.MediaItem) string {
 	b.WriteString("\n")
 
 	// Next Action
-	if item.StageStatus == model.StatusCompleted && item.CurrentStage != model.StagePublish {
+	if item.StageStatus == model.StatusCompleted && item.CurrentStage == model.StageRip {
+		// Special case: after rip, use [o] for organize
+		b.WriteString(sectionHeaderStyle.Render("NEXT ACTION"))
+		b.WriteString("\n")
+		b.WriteString("  Press [o] to organize files\n")
+		b.WriteString("\n")
+	} else if item.StageStatus == model.StatusCompleted && item.CurrentStage != model.StagePublish {
 		b.WriteString(sectionHeaderStyle.Render("NEXT ACTION"))
 		b.WriteString("\n")
 		nextStage := item.CurrentStage.NextStage()
-		b.WriteString(fmt.Sprintf("  Press [Enter] to %s\n", nextStage.String()))
+		b.WriteString(fmt.Sprintf("  Press [s] to start %s\n", nextStage.String()))
+		b.WriteString("\n")
+	} else if item.StageStatus == model.StatusPending {
+		b.WriteString(sectionHeaderStyle.Render("NEXT ACTION"))
+		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  Press [s] to start %s\n", item.CurrentStage.String()))
 		b.WriteString("\n")
 	} else if item.StageStatus == model.StatusFailed {
 		b.WriteString(sectionHeaderStyle.Render("NEXT ACTION"))
 		b.WriteString("\n")
-		b.WriteString("  Press [Enter] to retry\n")
+		b.WriteString(fmt.Sprintf("  Press [s] to retry %s\n", item.CurrentStage.String()))
 		b.WriteString("\n")
 	}
 
 	// Job History (collapsible in future)
-	jobs := a.state.Jobs[item.ID]
+	jobs := a.state.MovieJobs[item.ID]
 	if len(jobs) > 0 {
 		b.WriteString(sectionHeaderStyle.Render("HISTORY"))
 		b.WriteString("\n")
@@ -85,9 +96,19 @@ func (a *App) renderMovieDetail(item *model.MediaItem) string {
 	}
 
 	// Help
-	helpText := "[Enter] Next Action  [l] View Logs  [f] View Files  [Esc] Back  [q] Quit"
-	if item.CurrentStage == model.StageRip && item.StageStatus == model.StatusCompleted {
-		helpText = "[o] Organize  [l] View Logs  [f] View Files  [Esc] Back  [q] Quit"
+	var helpText string
+	if item.StageStatus == model.StatusInProgress {
+		helpText = "[r] Refresh  [Esc] Back  [q] Quit"
+	} else if item.CurrentStage == model.StageRip && item.StageStatus == model.StatusCompleted {
+		helpText = "[o] Organize  [r] Refresh  [Esc] Back  [q] Quit"
+	} else if item.StageStatus == model.StatusCompleted && item.CurrentStage != model.StagePublish {
+		// Ready for next stage (remux, transcode, or publish)
+		nextStage := item.CurrentStage.NextStage()
+		helpText = fmt.Sprintf("[s] Start %s  [r] Refresh  [Esc] Back  [q] Quit", nextStage.String())
+	} else if item.StageStatus == model.StatusPending || item.StageStatus == model.StatusFailed {
+		helpText = fmt.Sprintf("[s] Start %s  [r] Refresh  [Esc] Back  [q] Quit", item.CurrentStage.String())
+	} else {
+		helpText = "[r] Refresh  [Esc] Back  [q] Quit"
 	}
 	b.WriteString(helpStyle.Render(helpText))
 
@@ -119,29 +140,67 @@ func (a *App) renderTVShowDetail(item *model.MediaItem) string {
 				prefix = "> "
 			}
 
-			statusIcon := "○"
+			// Status icon with color
+			var statusIcon string
+			var iconStyle lipgloss.Style
 			switch season.StageStatus {
 			case model.StatusCompleted:
 				if season.CurrentStage == model.StagePublish {
 					statusIcon = "✓"
+					iconStyle = lipgloss.NewStyle().Foreground(colorSuccess)
 				} else {
 					statusIcon = "●"
+					iconStyle = lipgloss.NewStyle().Foreground(colorSuccess)
 				}
 			case model.StatusInProgress:
 				statusIcon = "◐"
+				iconStyle = lipgloss.NewStyle().Foreground(colorWarning)
 			case model.StatusFailed:
 				statusIcon = "✗"
+				iconStyle = lipgloss.NewStyle().Foreground(colorError)
+			default:
+				statusIcon = "○"
+				iconStyle = lipgloss.NewStyle().Foreground(colorMuted)
 			}
 
+			// Season name and stage
+			seasonName := fmt.Sprintf("Season %d", season.Number)
 			stageName := season.CurrentStage.DisplayName()
-			b.WriteString(fmt.Sprintf("%s%s Season %d - %s (%s)\n",
-				prefix, statusIcon, season.Number, stageName, season.StageStatus))
+
+			// Status text with color
+			var statusStyle lipgloss.Style
+			switch season.StageStatus {
+			case model.StatusCompleted:
+				statusStyle = lipgloss.NewStyle().Foreground(colorSuccess)
+			case model.StatusInProgress:
+				statusStyle = lipgloss.NewStyle().Foreground(colorWarning)
+			case model.StatusFailed:
+				statusStyle = lipgloss.NewStyle().Foreground(colorError)
+			default:
+				statusStyle = lipgloss.NewStyle().Foreground(colorMuted)
+			}
+
+			// Next action hint for this season
+			var actionHint string
+			if season.StageStatus == model.StatusCompleted && season.CurrentStage != model.StagePublish {
+				actionHint = mutedItemStyle.Render(fmt.Sprintf(" → %s", season.CurrentStage.NextAction()))
+			} else if season.StageStatus == model.StatusPending {
+				actionHint = mutedItemStyle.Render(" → start rip")
+			}
+
+			b.WriteString(fmt.Sprintf("%s%s %s - %s %s%s\n",
+				prefix,
+				iconStyle.Render(statusIcon),
+				seasonName,
+				stageName,
+				statusStyle.Render(string(season.StageStatus)),
+				actionHint))
 		}
 	}
 	b.WriteString("\n")
 
 	// Help
-	b.WriteString(helpStyle.Render("[Enter] View Season  [a] Add Season  [r] Start Rip  [Esc] Back  [q] Quit"))
+	b.WriteString(helpStyle.Render("[Enter] View Season  [a] Add Season  [r] Refresh  [Esc] Back  [q] Quit"))
 
 	return b.String()
 }

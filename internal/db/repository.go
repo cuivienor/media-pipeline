@@ -38,6 +38,7 @@ type Repository interface {
 
 	// Updated item methods
 	UpdateMediaItemStatus(ctx context.Context, id int64, status model.ItemStatus) error
+	UpdateMediaItemStage(ctx context.Context, id int64, stage model.Stage, status model.Status) error
 	ListActiveItems(ctx context.Context) ([]model.MediaItem, error)
 }
 

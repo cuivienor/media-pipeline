@@ -452,22 +452,32 @@ func TestLoadRipRequestFromJob_TVShow(t *testing.T) {
 	ctx := context.Background()
 	repo := db.NewSQLiteRepository(database)
 
-	// Create a media item
-	season := 2
+	// Create a media item (TV show)
 	item := &model.MediaItem{
 		Type:     model.MediaTypeTV,
 		Name:     "Breaking Bad",
 		SafeName: "Breaking_Bad",
-		Season:   &season,
 	}
 	if err := repo.CreateMediaItem(ctx, item); err != nil {
 		t.Fatalf("Failed to create media item: %v", err)
 	}
 
-	// Create a job
+	// Create a season
+	season := &model.Season{
+		ItemID:       item.ID,
+		Number:       2,
+		CurrentStage: model.StageRip,
+		StageStatus:  model.StatusPending,
+	}
+	if err := repo.CreateSeason(ctx, season); err != nil {
+		t.Fatalf("Failed to create season: %v", err)
+	}
+
+	// Create a job with SeasonID
 	disc := 3
 	job := &model.Job{
 		MediaItemID: item.ID,
+		SeasonID:    &season.ID,
 		Stage:       model.StageRip,
 		Status:      model.JobStatusPending,
 		Disc:        &disc,

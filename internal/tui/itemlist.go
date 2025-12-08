@@ -22,11 +22,11 @@ func (a *App) renderItemList() string {
 		return b.String()
 	}
 
-	// Group items by status
-	needsAction := a.filterItemsByStatus(model.StatusCompleted)
-	inProgress := a.filterItemsByStatus(model.StatusInProgress)
-	failed := a.filterItemsByStatus(model.StatusFailed)
-	notStarted := a.filterItemsByItemStatus(model.ItemStatusNotStarted)
+	// Group items by category (each item appears in exactly one section)
+	needsAction := a.filterItemsByCategory(model.StatusCompleted)
+	inProgress := a.filterItemsByCategory(model.StatusInProgress)
+	failed := a.filterItemsByCategory(model.StatusFailed)
+	notStarted := a.filterItemsByCategory(model.StatusPending)
 
 	cursorIndex := 0
 
@@ -94,10 +94,13 @@ func (a *App) renderItemRow(item model.MediaItem, selected bool) string {
 		prefix = "> "
 	}
 
-	// Status indicator
+	// Get the effective status for display (rolled up for TV shows)
+	effectiveStatus := a.categorizeItem(item)
+
+	// Status indicator based on effective status
 	var statusIcon string
 	var statusStyle lipgloss.Style
-	switch item.StageStatus {
+	switch effectiveStatus {
 	case model.StatusCompleted:
 		statusIcon = "●"
 		statusStyle = lipgloss.NewStyle().Foreground(colorSuccess)
@@ -127,11 +130,21 @@ func (a *App) renderItemRow(item model.MediaItem, selected bool) string {
 	// Next action hint
 	var actionHint string
 	if item.Type == model.MediaTypeMovie {
-		if item.StageStatus == model.StatusCompleted && item.CurrentStage != model.StagePublish {
-			actionHint = mutedItemStyle.Render(fmt.Sprintf(" → %s", item.CurrentStage.NextAction()))
-		} else if item.StageStatus == model.StatusInProgress {
+		switch effectiveStatus {
+		case model.StatusCompleted:
+			if item.CurrentStage != model.StagePublish {
+				actionHint = mutedItemStyle.Render(fmt.Sprintf(" → %s", item.CurrentStage.NextAction()))
+			}
+		case model.StatusInProgress:
 			actionHint = mutedItemStyle.Render(fmt.Sprintf(" [%s]", item.CurrentStage.String()))
+		case model.StatusPending:
+			actionHint = mutedItemStyle.Render(fmt.Sprintf(" → start %s", item.CurrentStage.String()))
+		case model.StatusFailed:
+			actionHint = mutedItemStyle.Render(fmt.Sprintf(" [%s failed]", item.CurrentStage.String()))
 		}
+	} else if item.Type == model.MediaTypeTV {
+		// For TV shows, summarize season states
+		actionHint = a.getTVActionHint(item, effectiveStatus)
 	}
 
 	return fmt.Sprintf("%s%s %s %s%s",
@@ -143,33 +156,132 @@ func (a *App) renderItemRow(item model.MediaItem, selected bool) string {
 	)
 }
 
-// filterItemsByStatus returns items with the given stage status (for movies)
-func (a *App) filterItemsByStatus(status model.Status) []model.MediaItem {
+// getTVActionHint returns an action hint for a TV show based on season states
+func (a *App) getTVActionHint(item model.MediaItem, effectiveStatus model.Status) string {
+	if len(item.Seasons) == 0 {
+		return mutedItemStyle.Render(" → add season")
+	}
+
+	// Count seasons by status and find the common next action
+	var completed, inProgress, failed, pending int
+	var nextAction string
+	for _, season := range item.Seasons {
+		switch season.StageStatus {
+		case model.StatusCompleted:
+			completed++
+			// Track what the next action would be for completed seasons
+			if season.CurrentStage != model.StagePublish {
+				nextAction = season.CurrentStage.NextAction()
+			}
+		case model.StatusInProgress:
+			inProgress++
+		case model.StatusFailed:
+			failed++
+		default:
+			pending++
+		}
+	}
+
+	// Generate hint based on status
+	switch effectiveStatus {
+	case model.StatusFailed:
+		return mutedItemStyle.Render(fmt.Sprintf(" [%d failed]", failed))
+	case model.StatusInProgress:
+		// Could be actively in progress, or a mix of completed+pending
+		if inProgress > 0 {
+			return mutedItemStyle.Render(" → finish ripping")
+		}
+		// Mix of completed and pending - show progress
+		return mutedItemStyle.Render(fmt.Sprintf(" [%d/%d ripped]", completed, completed+pending))
+	case model.StatusCompleted:
+		// All seasons ready for next action - show what that action is
+		if nextAction != "" {
+			return mutedItemStyle.Render(fmt.Sprintf(" → %s", nextAction))
+		}
+		return mutedItemStyle.Render(" → done")
+	default:
+		return mutedItemStyle.Render(" → start ripping")
+	}
+}
+
+// categorizeItem returns the display category for an item based on its most urgent status
+// Priority: Failed > InProgress > Mixed (treated as InProgress) > AllCompleted > AllPending
+// Note: Items at publish stage with completed status are considered "fully done" and return
+// a special status that won't match any visible section (they go to history).
+func (a *App) categorizeItem(item model.MediaItem) model.Status {
+	if item.Type == model.MediaTypeMovie {
+		// If publish is complete, the item is fully done - don't show in active lists
+		if item.CurrentStage == model.StagePublish && item.StageStatus == model.StatusCompleted {
+			return "" // Empty status won't match any filter category
+		}
+		return item.StageStatus
+	}
+
+	// For TV shows, categorize based on season states
+	// A show is only "needs action" if ALL seasons are completed
+	// If there's a mix of completed and pending, the show is still "in progress"
+	hasFailed := false
+	hasInProgress := false
+	hasCompletedNeedsNext := false // completed but not at publish
+	hasFullyDone := false          // publish completed
+	hasPending := false
+
+	for _, season := range item.Seasons {
+		switch season.StageStatus {
+		case model.StatusFailed:
+			hasFailed = true
+		case model.StatusInProgress:
+			hasInProgress = true
+		case model.StatusCompleted:
+			if season.CurrentStage == model.StagePublish {
+				hasFullyDone = true
+			} else {
+				hasCompletedNeedsNext = true
+			}
+		default:
+			hasPending = true
+		}
+	}
+
+	if hasFailed {
+		return model.StatusFailed
+	}
+	if hasInProgress {
+		return model.StatusInProgress
+	}
+	// Mix of completed and pending = still in progress (not all seasons done)
+	if (hasCompletedNeedsNext || hasFullyDone) && hasPending {
+		return model.StatusInProgress
+	}
+	// Some seasons need next stage
+	if hasCompletedNeedsNext {
+		return model.StatusCompleted
+	}
+	// All seasons fully done - hide from active list
+	if hasFullyDone && !hasPending {
+		return "" // Won't match any filter category
+	}
+	return model.StatusPending
+}
+
+// filterItemsByCategory returns items that belong to the given category
+func (a *App) filterItemsByCategory(targetStatus model.Status) []model.MediaItem {
 	var result []model.MediaItem
 	for _, item := range a.state.Items {
-		if item.Type == model.MediaTypeMovie && item.StageStatus == status {
+		if a.categorizeItem(item) == targetStatus {
 			result = append(result, item)
-		}
-		// For TV shows, check if any season matches
-		if item.Type == model.MediaTypeTV {
-			for _, season := range item.Seasons {
-				if season.StageStatus == status {
-					result = append(result, item)
-					break
-				}
-			}
 		}
 	}
 	return result
 }
 
-// filterItemsByItemStatus returns items with the given item status
-func (a *App) filterItemsByItemStatus(status model.ItemStatus) []model.MediaItem {
+// getDisplayOrderItems returns all items in the order they appear on screen
+// (NEEDS ACTION, IN PROGRESS, FAILED, NOT STARTED)
+func (a *App) getDisplayOrderItems() []model.MediaItem {
 	var result []model.MediaItem
-	for _, item := range a.state.Items {
-		if item.ItemStatus == status {
-			result = append(result, item)
-		}
-	}
+	result = append(result, a.filterItemsByCategory(model.StatusCompleted)...)
+	result = append(result, a.filterItemsByCategory(model.StatusInProgress)...)
+	result = append(result, a.filterItemsByCategory(model.StatusFailed)...)
+	result = append(result, a.filterItemsByCategory(model.StatusPending)...)
 	return result
 }
