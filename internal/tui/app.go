@@ -25,7 +25,7 @@ const (
 type App struct {
 	config *config.Config
 	repo   db.Repository
-	state  *PipelineState
+	state  *AppState
 	err    error
 
 	// Navigation state
@@ -61,7 +61,7 @@ func (a *App) Init() tea.Cmd {
 
 // stateMsg is sent when state loading completes
 type stateMsg struct {
-	state *PipelineState
+	state *AppState
 	err   error
 }
 

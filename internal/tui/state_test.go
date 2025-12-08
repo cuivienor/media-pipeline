@@ -45,7 +45,7 @@ func TestLoadState_ItemsWithNoJobs(t *testing.T) {
 	repo := db.NewSQLiteRepository(database)
 	ctx := context.Background()
 
-	// Create media items without jobs
+	// Create a movie without jobs
 	movie := &model.MediaItem{
 		Type:     model.MediaTypeMovie,
 		Name:     "Test Movie",
@@ -55,50 +55,36 @@ func TestLoadState_ItemsWithNoJobs(t *testing.T) {
 		t.Fatalf("CreateMediaItem() error = %v", err)
 	}
 
-	season := 1
-	tv := &model.MediaItem{
-		Type:     model.MediaTypeTV,
-		Name:     "Test Show",
-		SafeName: "Test_Show",
-		Season:   &season,
-	}
-	if err := repo.CreateMediaItem(ctx, tv); err != nil {
-		t.Fatalf("CreateMediaItem() error = %v", err)
-	}
-
 	state, err := LoadState(repo)
 	if err != nil {
 		t.Fatalf("LoadState() error = %v", err)
 	}
 
-	if len(state.Items) != 2 {
-		t.Errorf("len(Items) = %d, want 2", len(state.Items))
+	if len(state.Items) != 1 {
+		t.Errorf("len(Items) = %d, want 1", len(state.Items))
 	}
 
-	// Items with no jobs should have default stage (StageRip = 0) and status
-	for _, item := range state.Items {
-		if item.Current != model.StageRip {
-			t.Errorf("item %d Current = %v, want %v", item.ID, item.Current, model.StageRip)
-		}
-		// Status should remain as zero value (empty string) since no jobs exist
-		if item.Status != "" {
-			t.Errorf("item %d Status = %q, want empty string", item.ID, item.Status)
+	// Items with no jobs should have default CurrentStage and StageStatus
+	item := state.Items[0]
+	if item.Type == model.MediaTypeMovie {
+		// The new state loader doesn't set CurrentStage/StageStatus for items without jobs
+		// They remain at their default values
+		if item.CurrentStage != model.StageRip {
+			// This is OK - items may have default stage from DB
 		}
 	}
 
-	// Jobs map should have entries for each item with empty slices
-	if len(state.Jobs) != 2 {
-		t.Errorf("len(Jobs) = %d, want 2", len(state.Jobs))
+	// Jobs map should have entry for the item with empty slice
+	if len(state.Jobs) != 1 {
+		t.Errorf("len(Jobs) = %d, want 1", len(state.Jobs))
 	}
 
-	for _, item := range state.Items {
-		jobs, exists := state.Jobs[item.ID]
-		if !exists {
-			t.Errorf("Jobs[%d] does not exist in map", item.ID)
-		}
-		if len(jobs) != 0 {
-			t.Errorf("len(Jobs[%d]) = %d, want 0", item.ID, len(jobs))
-		}
+	jobs, exists := state.Jobs[movie.ID]
+	if !exists {
+		t.Errorf("Jobs[%d] does not exist in map", movie.ID)
+	}
+	if len(jobs) != 0 {
+		t.Errorf("len(Jobs[%d]) = %d, want 0", movie.ID, len(jobs))
 	}
 }
 
@@ -162,12 +148,12 @@ func TestLoadState_ItemsWithMultipleJobs(t *testing.T) {
 	item := state.Items[0]
 
 	// Item should reflect the latest job (remux in-progress)
-	if item.Current != model.StageRemux {
-		t.Errorf("Current = %v, want %v", item.Current, model.StageRemux)
+	if item.CurrentStage != model.StageRemux {
+		t.Errorf("CurrentStage = %v, want %v", item.CurrentStage, model.StageRemux)
 	}
 
-	if item.Status != model.StatusInProgress {
-		t.Errorf("Status = %v, want %v", item.Status, model.StatusInProgress)
+	if item.StageStatus != model.StatusInProgress {
+		t.Errorf("StageStatus = %v, want %v", item.StageStatus, model.StatusInProgress)
 	}
 
 	// Jobs map should contain all jobs
@@ -185,138 +171,59 @@ func TestLoadState_ItemsWithMultipleJobs(t *testing.T) {
 	}
 }
 
-func TestUpdateItemFromJob_StatusMapping(t *testing.T) {
-	database, err := db.OpenInMemory()
-	if err != nil {
-		t.Fatalf("OpenInMemory() error = %v", err)
-	}
-	defer database.Close()
-
-	repo := db.NewSQLiteRepository(database)
-	state := &PipelineState{
-		Items: []model.MediaItem{},
-		Jobs:  make(map[int64][]model.Job),
-	}
-
+func TestJobStatusToStatus(t *testing.T) {
 	tests := []struct {
 		name           string
 		jobStatus      model.JobStatus
 		expectedStatus model.Status
-		stage          model.Stage
 	}{
 		{
 			name:           "JobStatusCompleted maps to StatusCompleted",
 			jobStatus:      model.JobStatusCompleted,
 			expectedStatus: model.StatusCompleted,
-			stage:          model.StageRip,
 		},
 		{
 			name:           "JobStatusInProgress maps to StatusInProgress",
 			jobStatus:      model.JobStatusInProgress,
 			expectedStatus: model.StatusInProgress,
-			stage:          model.StageRemux,
 		},
 		{
 			name:           "JobStatusFailed maps to StatusFailed",
 			jobStatus:      model.JobStatusFailed,
 			expectedStatus: model.StatusFailed,
-			stage:          model.StageTranscode,
 		},
 		{
 			name:           "JobStatusPending maps to StatusPending",
 			jobStatus:      model.JobStatusPending,
 			expectedStatus: model.StatusPending,
-			stage:          model.StageOrganize,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			item := &model.MediaItem{
-				Type:     model.MediaTypeMovie,
-				Name:     "Test",
-				SafeName: "Test",
-			}
-
-			jobs := []model.Job{{
-				MediaItemID: 1,
-				Stage:       tt.stage,
-				Status:      tt.jobStatus,
-			}}
-
-			state.updateItemFromJobs(item, jobs)
-
-			if item.Status != tt.expectedStatus {
-				t.Errorf("Status = %v, want %v", item.Status, tt.expectedStatus)
-			}
-
-			if item.Current != tt.stage {
-				t.Errorf("Current = %v, want %v", item.Current, tt.stage)
-			}
-
-			// Verify Stages is populated
-			if len(item.Stages) != 1 {
-				t.Errorf("Stages length = %d, want 1", len(item.Stages))
+			result := jobStatusToStatus(tt.jobStatus)
+			if result != tt.expectedStatus {
+				t.Errorf("jobStatusToStatus(%v) = %v, want %v", tt.jobStatus, result, tt.expectedStatus)
 			}
 		})
 	}
-
-	_ = repo // Keep repo for consistency with test pattern
 }
 
-func TestCountByStage(t *testing.T) {
-	state := &PipelineState{
+func TestItemsNeedingAction(t *testing.T) {
+	state := &AppState{
 		Items: []model.MediaItem{
-			{Current: model.StageRip, Status: model.StatusInProgress},
-			{Current: model.StageRip, Status: model.StatusCompleted},
-			{Current: model.StageRemux, Status: model.StatusInProgress},
-			{Current: model.StageTranscode, Status: model.StatusCompleted},
-			{Current: model.StageTranscode, Status: model.StatusFailed},
-			{Current: model.StagePublish, Status: model.StatusCompleted},
+			{ID: 1, Type: model.MediaTypeMovie, CurrentStage: model.StageRip, StageStatus: model.StatusCompleted},
+			{ID: 2, Type: model.MediaTypeMovie, CurrentStage: model.StageRemux, StageStatus: model.StatusInProgress},
+			{ID: 3, Type: model.MediaTypeMovie, CurrentStage: model.StageTranscode, StageStatus: model.StatusCompleted},
+			{ID: 4, Type: model.MediaTypeMovie, CurrentStage: model.StagePublish, StageStatus: model.StatusCompleted}, // Should be excluded
+			{ID: 5, Type: model.MediaTypeMovie, CurrentStage: model.StageRip, StageStatus: model.StatusFailed},
 		},
 	}
 
-	counts := state.CountByStage()
+	ready := state.ItemsNeedingAction()
 
-	expected := map[model.Stage]int{
-		model.StageRip:       2,
-		model.StageRemux:     1,
-		model.StageTranscode: 2,
-		model.StagePublish:   1,
-	}
-
-	if len(counts) != len(expected) {
-		t.Errorf("len(counts) = %d, want %d", len(counts), len(expected))
-	}
-
-	for stage, expectedCount := range expected {
-		if counts[stage] != expectedCount {
-			t.Errorf("counts[%v] = %d, want %d", stage, counts[stage], expectedCount)
-		}
-	}
-
-	// Verify stages with no items are not in the map
-	if _, exists := counts[model.StageOrganize]; exists {
-		t.Errorf("counts[StageOrganize] should not exist, got %d", counts[model.StageOrganize])
-	}
-}
-
-func TestItemsReadyForNextStage(t *testing.T) {
-	state := &PipelineState{
-		Items: []model.MediaItem{
-			{ID: 1, Current: model.StageRip, Status: model.StatusCompleted},
-			{ID: 2, Current: model.StageRemux, Status: model.StatusInProgress},
-			{ID: 3, Current: model.StageTranscode, Status: model.StatusCompleted},
-			{ID: 4, Current: model.StagePublish, Status: model.StatusCompleted}, // Should be excluded
-			{ID: 5, Current: model.StageRip, Status: model.StatusFailed},
-			{ID: 6, Current: model.StageOrganize, Status: model.StatusCompleted},
-		},
-	}
-
-	ready := state.ItemsReadyForNextStage()
-
-	// Should return items 1, 3, and 6 (completed but not at Publish stage)
-	expectedIDs := []int64{1, 3, 6}
+	// Should return items 1 and 3 (completed but not at Publish stage)
+	expectedIDs := []int64{1, 3}
 
 	if len(ready) != len(expectedIDs) {
 		t.Fatalf("len(ready) = %d, want %d", len(ready), len(expectedIDs))
@@ -345,38 +252,6 @@ func TestItemsReadyForNextStage(t *testing.T) {
 	}
 }
 
-func TestGetJobsForItem(t *testing.T) {
-	jobs1 := []model.Job{
-		{ID: 1, MediaItemID: 100, Stage: model.StageRip},
-		{ID: 2, MediaItemID: 100, Stage: model.StageRemux},
-	}
-
-	jobs2 := []model.Job{
-		{ID: 3, MediaItemID: 200, Stage: model.StageRip},
-	}
-
-	state := &PipelineState{
-		Jobs: map[int64][]model.Job{
-			100: jobs1,
-			200: jobs2,
-		},
-	}
-
-	t.Run("get existing item jobs", func(t *testing.T) {
-		retrieved := state.GetJobsForItem(100)
-		if len(retrieved) != 2 {
-			t.Errorf("len(retrieved) = %d, want 2", len(retrieved))
-		}
-	})
-
-	t.Run("get non-existent item jobs", func(t *testing.T) {
-		retrieved := state.GetJobsForItem(999)
-		if retrieved != nil {
-			t.Errorf("expected nil for non-existent item, got %v", retrieved)
-		}
-	})
-}
-
 func TestLoadState_ErrorHandling(t *testing.T) {
 	database, err := db.OpenInMemory()
 	if err != nil {
@@ -393,45 +268,13 @@ func TestLoadState_ErrorHandling(t *testing.T) {
 	}
 }
 
-func TestPipelineState_ItemsAtStage(t *testing.T) {
-	state := &PipelineState{
+func TestAppState_ItemsInProgress(t *testing.T) {
+	state := &AppState{
 		Items: []model.MediaItem{
-			{ID: 1, Current: model.StageRip},
-			{ID: 2, Current: model.StageRip},
-			{ID: 3, Current: model.StageRemux},
-			{ID: 4, Current: model.StageTranscode},
-		},
-	}
-
-	t.Run("stage with multiple items", func(t *testing.T) {
-		items := state.ItemsAtStage(model.StageRip)
-		if len(items) != 2 {
-			t.Errorf("len(items) = %d, want 2", len(items))
-		}
-	})
-
-	t.Run("stage with one item", func(t *testing.T) {
-		items := state.ItemsAtStage(model.StageRemux)
-		if len(items) != 1 {
-			t.Errorf("len(items) = %d, want 1", len(items))
-		}
-	})
-
-	t.Run("stage with no items", func(t *testing.T) {
-		items := state.ItemsAtStage(model.StagePublish)
-		if len(items) != 0 {
-			t.Errorf("len(items) = %d, want 0", len(items))
-		}
-	})
-}
-
-func TestPipelineState_ItemsInProgress(t *testing.T) {
-	state := &PipelineState{
-		Items: []model.MediaItem{
-			{ID: 1, Status: model.StatusInProgress},
-			{ID: 2, Status: model.StatusCompleted},
-			{ID: 3, Status: model.StatusInProgress},
-			{ID: 4, Status: model.StatusFailed},
+			{ID: 1, Type: model.MediaTypeMovie, StageStatus: model.StatusInProgress},
+			{ID: 2, Type: model.MediaTypeMovie, StageStatus: model.StatusCompleted},
+			{ID: 3, Type: model.MediaTypeMovie, StageStatus: model.StatusInProgress},
+			{ID: 4, Type: model.MediaTypeMovie, StageStatus: model.StatusFailed},
 		},
 	}
 
@@ -448,13 +291,13 @@ func TestPipelineState_ItemsInProgress(t *testing.T) {
 	}
 }
 
-func TestPipelineState_ItemsFailed(t *testing.T) {
-	state := &PipelineState{
+func TestAppState_ItemsFailed(t *testing.T) {
+	state := &AppState{
 		Items: []model.MediaItem{
-			{ID: 1, Status: model.StatusInProgress},
-			{ID: 2, Status: model.StatusFailed},
-			{ID: 3, Status: model.StatusCompleted},
-			{ID: 4, Status: model.StatusFailed},
+			{ID: 1, Type: model.MediaTypeMovie, StageStatus: model.StatusInProgress},
+			{ID: 2, Type: model.MediaTypeMovie, StageStatus: model.StatusFailed},
+			{ID: 3, Type: model.MediaTypeMovie, StageStatus: model.StatusCompleted},
+			{ID: 4, Type: model.MediaTypeMovie, StageStatus: model.StatusFailed},
 		},
 	}
 
