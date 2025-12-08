@@ -29,10 +29,11 @@ type App struct {
 	err    error
 
 	// Navigation state
-	currentView   View
-	selectedStage model.Stage
-	selectedItem  *model.MediaItem
-	cursor        int
+	currentView    View
+	selectedStage  model.Stage
+	selectedItem   *model.MediaItem
+	selectedSeason *model.Season
+	cursor         int
 
 	// Window size
 	width  int
@@ -175,9 +176,11 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch a.currentView {
 		case ViewItemDetail:
 			a.currentView = ViewItemList
+			a.selectedItem = nil
 			a.cursor = 0
 		case ViewSeasonDetail:
 			a.currentView = ViewItemDetail
+			a.selectedSeason = nil
 			a.cursor = 0
 		case ViewNewItem:
 			a.currentView = ViewItemList
@@ -256,7 +259,7 @@ func (a *App) handleEnter() (tea.Model, tea.Cmd) {
 		// For TV shows, drill into season detail
 		if a.selectedItem != nil && a.selectedItem.Type == model.MediaTypeTV {
 			if a.cursor < len(a.selectedItem.Seasons) {
-				// Note: selectedSeason not yet added to App struct in this task
+				a.selectedSeason = &a.selectedItem.Seasons[a.cursor]
 				a.currentView = ViewSeasonDetail
 				a.cursor = 0
 			}
@@ -310,8 +313,7 @@ func (a *App) View() string {
 	case ViewItemDetail:
 		return a.renderItemDetail()
 	case ViewSeasonDetail:
-		// Season detail not yet implemented in this task
-		return "Season detail view - not yet implemented"
+		return a.renderSeasonDetail()
 	case ViewNewItem:
 		return a.renderNewRipForm()
 	case ViewOrganize:
