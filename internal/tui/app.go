@@ -13,12 +13,12 @@ import (
 type View int
 
 const (
-	ViewOverview View = iota
-	ViewStageList
-	ViewActionNeeded
-	ViewItemDetail
-	ViewNewRip
+	ViewItemList View = iota  // NEW: Main view
+	ViewItemDetail            // NEW: Movie or TV show detail
+	ViewSeasonDetail          // NEW: Season detail for TV
 	ViewOrganize
+	ViewNewItem // Renamed from ViewNewRip
+	// Removed: ViewOverview, ViewStageList, ViewActionNeeded
 )
 
 // App is the main application model
@@ -50,7 +50,7 @@ func NewApp(cfg *config.Config, repo db.Repository) *App {
 	return &App{
 		config:      cfg,
 		repo:        repo,
-		currentView: ViewOverview,
+		currentView: ViewItemList,
 	}
 }
 
@@ -91,7 +91,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			a.err = msg.err
 		}
-		a.currentView = ViewOverview
+		a.currentView = ViewItemList
 		return a, a.loadState
 
 	case organizeLoadedMsg:
@@ -122,8 +122,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = msg.err
 			return a, nil
 		}
-		// Return to overview and refresh
-		a.currentView = ViewOverview
+		// Return to item list and refresh
+		a.currentView = ViewItemList
 		a.organizeView = nil
 		return a, a.loadState
 	}
@@ -133,8 +133,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyPress handles keyboard input
 func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Route to form handler if in NewRip view
-	if a.currentView == ViewNewRip {
+	// Route to form handler if in NewItem view
+	if a.currentView == ViewNewItem {
 		return a.handleNewRipKey(msg)
 	}
 
@@ -152,9 +152,9 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.loadState
 
 	case "n":
-		// New rip (only from overview or action needed view)
-		if a.currentView == ViewOverview || a.currentView == ViewActionNeeded {
-			a.currentView = ViewNewRip
+		// New item (only from item list view)
+		if a.currentView == ViewItemList {
+			a.currentView = ViewNewItem
 			a.newRipForm = &NewRipForm{
 				Type:     "movie",
 				DiscPath: "disc:0",
@@ -170,30 +170,17 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "tab":
-		// Toggle between overview and action needed
-		if a.currentView == ViewOverview {
-			a.currentView = ViewActionNeeded
-		} else {
-			a.currentView = ViewOverview
-		}
-		a.cursor = 0
-		return a, nil
-
 	case "esc":
 		// Go back
 		switch a.currentView {
-		case ViewStageList:
-			a.currentView = ViewOverview
-			a.cursor = int(a.selectedStage)
 		case ViewItemDetail:
-			a.currentView = ViewStageList
+			a.currentView = ViewItemList
 			a.cursor = 0
-		case ViewActionNeeded:
-			a.currentView = ViewOverview
+		case ViewSeasonDetail:
+			a.currentView = ViewItemDetail
 			a.cursor = 0
-		case ViewNewRip:
-			a.currentView = ViewOverview
+		case ViewNewItem:
+			a.currentView = ViewItemList
 			a.cursor = 0
 		case ViewOrganize:
 			a.currentView = ViewItemDetail
@@ -230,23 +217,20 @@ func (a *App) getMaxCursor() int {
 	}
 
 	switch a.currentView {
-	case ViewOverview:
-		return 3 // 4 stages (0-3)
-	case ViewStageList:
-		items := a.state.ItemsAtStage(a.selectedStage)
-		if len(items) == 0 {
+	case ViewItemList:
+		if len(a.state.Items) == 0 {
 			return 0
 		}
-		return len(items) - 1
-	case ViewActionNeeded:
-		ready := a.state.ItemsReadyForNextStage()
-		inProgress := a.state.ItemsInProgress()
-		failed := a.state.ItemsFailed()
-		total := len(ready) + len(inProgress) + len(failed)
-		if total == 0 {
-			return 0
+		return len(a.state.Items) - 1
+	case ViewItemDetail:
+		// For TV shows showing seasons
+		if a.selectedItem != nil && a.selectedItem.Type == model.MediaTypeTV {
+			if len(a.selectedItem.Seasons) == 0 {
+				return 0
+			}
+			return len(a.selectedItem.Seasons) - 1
 		}
-		return total - 1
+		return 0
 	default:
 		return 0
 	}
@@ -259,28 +243,23 @@ func (a *App) handleEnter() (tea.Model, tea.Cmd) {
 	}
 
 	switch a.currentView {
-	case ViewOverview:
-		// Drill into stage
-		a.selectedStage = model.Stage(a.cursor)
-		a.currentView = ViewStageList
-		a.cursor = 0
-		return a, nil
-
-	case ViewStageList:
+	case ViewItemList:
 		// Select item for detail
-		items := a.state.ItemsAtStage(a.selectedStage)
-		if a.cursor < len(items) {
-			a.selectedItem = &items[a.cursor]
+		if a.cursor < len(a.state.Items) {
+			a.selectedItem = &a.state.Items[a.cursor]
 			a.currentView = ViewItemDetail
+			a.cursor = 0
 		}
 		return a, nil
 
-	case ViewActionNeeded:
-		// Select item for detail
-		item := a.getActionNeededItem(a.cursor)
-		if item != nil {
-			a.selectedItem = item
-			a.currentView = ViewItemDetail
+	case ViewItemDetail:
+		// For TV shows, drill into season detail
+		if a.selectedItem != nil && a.selectedItem.Type == model.MediaTypeTV {
+			if a.cursor < len(a.selectedItem.Seasons) {
+				// Note: selectedSeason not yet added to App struct in this task
+				a.currentView = ViewSeasonDetail
+				a.cursor = 0
+			}
 		}
 		return a, nil
 	}
@@ -326,15 +305,14 @@ func (a *App) View() string {
 	}
 
 	switch a.currentView {
-	case ViewOverview:
-		return a.renderOverview()
-	case ViewStageList:
-		return a.renderStageList()
-	case ViewActionNeeded:
-		return a.renderActionNeeded()
+	case ViewItemList:
+		return a.renderItemList()
 	case ViewItemDetail:
 		return a.renderItemDetail()
-	case ViewNewRip:
+	case ViewSeasonDetail:
+		// Season detail not yet implemented in this task
+		return "Season detail view - not yet implemented"
+	case ViewNewItem:
 		return a.renderNewRipForm()
 	case ViewOrganize:
 		return a.renderOrganizeView()
