@@ -175,7 +175,7 @@ func (a *App) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		// Organize (only from item detail view when at rip stage and completed)
 		if a.currentView == ViewItemDetail && a.selectedItem != nil {
-			if a.selectedItem.Current == model.StageRip && a.selectedItem.Status == model.StatusCompleted {
+			if a.selectedItem.CurrentStage == model.StageRip && a.selectedItem.StageStatus == model.StatusCompleted {
 				return a, a.loadOrganizeView(a.selectedItem)
 			}
 		}
