@@ -100,6 +100,15 @@ const (
 	MediaTypeTV    MediaType = "tv"
 )
 
+// ItemStatus represents the overall status of an item
+type ItemStatus string
+
+const (
+	ItemStatusNotStarted ItemStatus = "not_started"
+	ItemStatusActive     ItemStatus = "active"
+	ItemStatusCompleted  ItemStatus = "completed"
+)
+
 // StageInfo contains metadata about a specific pipeline stage for an item
 type StageInfo struct {
 	Stage       Stage
@@ -110,18 +119,28 @@ type StageInfo struct {
 	Metadata    map[string]interface{}
 }
 
-// MediaItem represents a single media item (movie or TV season) in the pipeline
+// MediaItem represents a single media item (movie or TV show) in the pipeline
 type MediaItem struct {
 	ID       int64     // Database ID (0 if not persisted)
 	Type     MediaType // "movie" or "tv"
 	Name     string    // Human-readable name like "The Lion King"
 	SafeName string    // Filesystem-safe name like "The_Lion_King"
-	Season   *int      // Season number for TV (nil for movies)
 
-	// Pipeline state
-	Stages  []StageInfo // History of all stages this item has been through
-	Current Stage       // The furthest completed stage
-	Status  Status      // Status of the current stage
+	// Item-level status
+	ItemStatus ItemStatus
+
+	// For Movies: pipeline state lives here
+	CurrentStage Stage  // Only used for movies
+	StageStatus  Status // Only used for movies
+
+	// For TV Shows: seasons contain the pipeline state
+	Seasons []Season // Populated for TV shows
+
+	// Legacy fields (to be removed after migration)
+	Season  *int        // DEPRECATED: Season number for TV
+	Stages  []StageInfo // DEPRECATED: History of stages
+	Current Stage       // DEPRECATED: Use CurrentStage
+	Status  Status      // DEPRECATED: Use StageStatus
 }
 
 // UniqueKey returns a string that uniquely identifies this media item
