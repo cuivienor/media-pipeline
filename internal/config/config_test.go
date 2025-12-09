@@ -369,3 +369,44 @@ library_base: /mnt/media/library
 		t.Errorf("RemuxLanguages() default = %v, want [eng]", langs)
 	}
 }
+
+func TestConfig_TranscodeDefaults(t *testing.T) {
+	cfg := &Config{}
+
+	if got := cfg.TranscodeCRF(); got != 20 {
+		t.Errorf("TranscodeCRF() = %d, want 20", got)
+	}
+	if got := cfg.TranscodeMode(); got != "software" {
+		t.Errorf("TranscodeMode() = %q, want %q", got, "software")
+	}
+	if got := cfg.TranscodePreset(); got != "slow" {
+		t.Errorf("TranscodePreset() = %q, want %q", got, "slow")
+	}
+	if got := cfg.TranscodeHWPreset(); got != "medium" {
+		t.Errorf("TranscodeHWPreset() = %q, want %q", got, "medium")
+	}
+}
+
+func TestConfig_TranscodeCustom(t *testing.T) {
+	cfg := &Config{
+		Transcode: TranscodeConfig{
+			CRF:      18,
+			Mode:     "hardware",
+			Preset:   "medium",
+			HWPreset: "fast",
+		},
+	}
+
+	if got := cfg.TranscodeCRF(); got != 18 {
+		t.Errorf("TranscodeCRF() = %d, want 18", got)
+	}
+	if got := cfg.TranscodeMode(); got != "hardware" {
+		t.Errorf("TranscodeMode() = %q, want %q", got, "hardware")
+	}
+	if got := cfg.TranscodePreset(); got != "medium" {
+		t.Errorf("TranscodePreset() = %q, want %q", got, "medium")
+	}
+	if got := cfg.TranscodeHWPreset(); got != "fast" {
+		t.Errorf("TranscodeHWPreset() = %q, want %q", got, "fast")
+	}
+}

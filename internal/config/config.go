@@ -19,12 +19,21 @@ type RemuxConfig struct {
 	Languages []string `yaml:"languages"`
 }
 
+// TranscodeConfig holds transcode-specific configuration
+type TranscodeConfig struct {
+	CRF      int    `yaml:"crf"`       // Quality (0-51, default 20)
+	Mode     string `yaml:"mode"`      // "software" or "hardware"
+	Preset   string `yaml:"preset"`    // libx265 preset (default "slow")
+	HWPreset string `yaml:"hw_preset"` // QSV preset (default "medium")
+}
+
 // Config holds application configuration
 type Config struct {
 	StagingBase string            `yaml:"staging_base"` // Staging directory
 	LibraryBase string            `yaml:"library_base"` // Library directory
 	Dispatch    map[string]string `yaml:"dispatch"`     // SSH targets per stage
 	Remux       RemuxConfig       `yaml:"remux"`        // Remux configuration
+	Transcode   TranscodeConfig   `yaml:"transcode"`    // Transcode configuration
 
 	// Derived from environment, not stored in YAML
 	mediaBase string
@@ -91,6 +100,42 @@ func (c *Config) RemuxLanguages() []string {
 		return []string{"eng"}
 	}
 	return c.Remux.Languages
+}
+
+// TranscodeCRF returns the CRF value for transcoding
+// Defaults to 20 if not configured
+func (c *Config) TranscodeCRF() int {
+	if c.Transcode.CRF == 0 {
+		return 20
+	}
+	return c.Transcode.CRF
+}
+
+// TranscodeMode returns the encoding mode ("software" or "hardware")
+// Defaults to "software" if not configured
+func (c *Config) TranscodeMode() string {
+	if c.Transcode.Mode == "" {
+		return "software"
+	}
+	return c.Transcode.Mode
+}
+
+// TranscodePreset returns the libx265 preset
+// Defaults to "slow" if not configured
+func (c *Config) TranscodePreset() string {
+	if c.Transcode.Preset == "" {
+		return "slow"
+	}
+	return c.Transcode.Preset
+}
+
+// TranscodeHWPreset returns the QSV preset
+// Defaults to "medium" if not configured
+func (c *Config) TranscodeHWPreset() string {
+	if c.Transcode.HWPreset == "" {
+		return "medium"
+	}
+	return c.Transcode.HWPreset
 }
 
 // Load reads configuration from a YAML file
