@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 
 	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/logging"
@@ -17,319 +16,139 @@ import (
 
 const defaultMediaBase = "/mnt/media"
 
-// Options holds parsed command-line options
-type Options struct {
-	Type     ripper.MediaType
-	Name     string
-	Season   int
-	Disc     int
-	DiscPath string
-	DBPath   string // Path to SQLite database (optional)
-	JobID    int64  // Job ID for TUI dispatch mode (optional)
-}
-
-// Mode represents the execution mode
-type Mode int
-
-const (
-	ModeStandaloneNoDB   Mode = iota // Standalone mode without DB tracking
-	ModeStandaloneWithDB             // Standalone mode with DB tracking
-	ModeJobDispatch                  // TUI dispatch mode (load job from DB)
-)
-
-// Config holds runtime configuration
-type Config struct {
-	MediaBase      string
-	MakeMKVConPath string
-}
-
 func main() {
-	opts, err := ParseArgs(os.Args[1:])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Usage: ripper -t <movie|tv> -n <name> [-s <season>] [-d <disc>] [--disc-path <path>] [-db <path>]\n")
+	var jobID int64
+	var dbPath string
+	var discPath string
+
+	flag.Int64Var(&jobID, "job-id", 0, "Job ID to execute")
+	flag.StringVar(&dbPath, "db", "", "Path to database")
+	flag.StringVar(&discPath, "disc-path", "disc:0", "Path to disc device")
+	flag.Parse()
+
+	if jobID == 0 || dbPath == "" {
+		fmt.Fprintln(os.Stderr, "Usage: ripper -job-id <id> -db <path> [--disc-path <path>]")
 		os.Exit(1)
 	}
 
-	// Build configuration from environment
-	env := getEnvMap()
-	config := BuildConfig(opts, env)
-
-	// Build state manager (with or without DB)
-	stateManager, database, err := BuildStateManager(opts)
-	if err != nil {
+	if err := run(jobID, dbPath, discPath); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if database != nil {
-		defer database.Close()
-	}
+}
 
-	// Helper to mark job as failed (only works in job dispatch mode)
+func run(jobID int64, dbPath string, discPath string) error {
+	ctx := context.Background()
+
+	// Get config from environment
+	mediaBase := os.Getenv("MEDIA_BASE")
+	if mediaBase == "" {
+		mediaBase = defaultMediaBase
+	}
+	makeMKVConPath := os.Getenv("MAKEMKVCON_PATH")
+
+	// Open database
+	database, err := db.Open(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer database.Close()
+
+	repo := db.NewSQLiteRepository(database)
+
+	// Helper to mark job as failed
 	markFailed := func(errMsg string) {
-		if opts.JobID > 0 && database != nil {
-			repo := db.NewSQLiteRepository(database)
-			if updateErr := repo.UpdateJobStatus(context.Background(), opts.JobID, model.JobStatusFailed, errMsg); updateErr != nil {
-				fmt.Fprintf(os.Stderr, "Failed to update job status: %v\n", updateErr)
-			}
+		if updateErr := repo.UpdateJobStatus(ctx, jobID, model.JobStatusFailed, errMsg); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to update job status: %v\n", updateErr)
 		}
 	}
 
-	// Build request first (we need it to determine log path)
-	var req *ripper.RipRequest
-	if opts.JobID > 0 {
-		// Job-id mode: load request from database
-		req, err = LoadRipRequestFromJob(database, opts.JobID)
-		if err != nil {
-			markFailed(err.Error())
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		// Override disc path if specified
-		if opts.DiscPath != "" {
-			req.DiscPath = opts.DiscPath
-		}
-	} else {
-		// Standalone mode: build request from opts
-		req = BuildRipRequest(opts)
+	// Get job
+	job, err := repo.GetJob(ctx, jobID)
+	if err != nil {
+		return fmt.Errorf("failed to get job: %w", err)
 	}
 
-	// Create ripper components
-	stagingBase := filepath.Join(config.MediaBase, "staging")
-	runner := ripper.NewMakeMKVRunner(config.MakeMKVConPath)
-
-	// Determine log path based on mode
-	var logPath string
-	if opts.JobID > 0 {
-		// Job dispatch mode: use standard log location
-		logDir := filepath.Join(config.MediaBase, "pipeline", "logs", "jobs", fmt.Sprintf("%d", opts.JobID))
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			markFailed(err.Error())
-			fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
-			os.Exit(1)
-		}
-		logPath = filepath.Join(logDir, "job.log")
-	} else {
-		// Standalone mode: log to output directory
-		tempRipper := ripper.NewRipper(stagingBase, nil, nil, nil)
-		outputDir := tempRipper.BuildOutputDir(req)
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating output directory: %v\n", err)
-			os.Exit(1)
-		}
-		logPath = filepath.Join(outputDir, "rip.log")
+	// Get media item
+	item, err := repo.GetMediaItem(ctx, job.MediaItemID)
+	if err != nil {
+		markFailed(err.Error())
+		return fmt.Errorf("failed to get media item: %w", err)
 	}
 
-	// Create logger
+	// Build rip request from job
+	req, err := buildRipRequest(ctx, repo, job, item, discPath)
+	if err != nil {
+		markFailed(err.Error())
+		return fmt.Errorf("failed to build rip request: %w", err)
+	}
+
+	// Set up logging
+	logDir := filepath.Join(mediaBase, "pipeline", "logs", "jobs", fmt.Sprintf("%d", jobID))
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		markFailed(err.Error())
+		return fmt.Errorf("failed to create log directory: %w", err)
+	}
+	logPath := filepath.Join(logDir, "job.log")
+
 	logger, err := logging.NewForJob(logPath, true, nil)
 	if err != nil {
 		markFailed(err.Error())
-		fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer logger.Close()
 
-	// Create ripper with logger
+	logger.Info("Starting rip: type=%s name=%q", item.Type, item.Name)
+	if item.Type == model.MediaTypeTV {
+		logger.Info("TV show: season=%d disc=%d", req.Season, req.Disc)
+	}
+
+	// Build output directory
+	stagingBase := filepath.Join(mediaBase, "staging")
+	outputDir := buildOutputDir(stagingBase, req)
+	logger.Info("Output directory: %s", outputDir)
+
+	// Update job to in_progress
+	job.Status = model.JobStatusInProgress
+	job.OutputDir = outputDir
+	now := time.Now()
+	job.StartedAt = &now
+	if err := repo.UpdateJob(ctx, job); err != nil {
+		markFailed(err.Error())
+		return fmt.Errorf("failed to update job status: %w", err)
+	}
+
+	// Create ripper components
+	runner := ripper.NewMakeMKVRunner(makeMKVConPath)
+	stateManager := ripper.NewDualWriteStateManager(ripper.NewStateManager(), repo)
+	stateManager.WithJobID(jobID)
+
 	r := ripper.NewRipper(stagingBase, runner, stateManager, &loggerAdapter{logger})
 
 	// Run the rip
-	result, err := r.Rip(context.Background(), req)
+	result, err := r.Rip(ctx, req)
 	if err != nil {
+		logger.Error("Rip failed: %v", err)
 		// Note: r.Rip already marks job as failed via StateManager.SetError
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
-	fmt.Printf("Rip completed successfully!\n")
-	fmt.Printf("Output: %s\n", result.OutputDir)
-	fmt.Printf("Duration: %s\n", result.Duration())
+	logger.Info("Rip finished successfully in %s", result.Duration())
+	return nil
 }
 
-// loggerAdapter adapts logging.Logger to ripper.Logger interface
-type loggerAdapter struct {
-	*logging.Logger
-}
-
-// BuildStateManager creates the appropriate state manager based on options
-func BuildStateManager(opts *Options) (ripper.StateManager, *db.DB, error) {
-	if opts.DBPath == "" {
-		// No DB - use filesystem-only state manager
-		return ripper.NewStateManager(), nil, nil
-	}
-
-	// Open database
-	database, err := db.Open(opts.DBPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	// Create dual-write state manager
-	repo := db.NewSQLiteRepository(database)
-	fsManager := ripper.NewStateManager()
-	dualManager := ripper.NewDualWriteStateManager(fsManager, repo)
-
-	// If we're in job-id mode, set the job ID on the state manager
-	if opts.JobID > 0 {
-		dualManager.WithJobID(opts.JobID)
-	}
-
-	return dualManager, database, nil
-}
-
-// ParseArgs parses command-line arguments
-func ParseArgs(args []string) (*Options, error) {
-	fs := flag.NewFlagSet("ripper", flag.ContinueOnError)
-
-	var typeStr string
-	var name string
-	var season, disc int
-	var discPath string
-	var dbPath string
-	var jobID int64
-
-	fs.StringVar(&typeStr, "t", "", "Media type: movie or tv/show")
-	fs.StringVar(&typeStr, "type", "", "Media type: movie or tv/show")
-	fs.StringVar(&name, "n", "", "Media name")
-	fs.StringVar(&name, "name", "", "Media name")
-	fs.IntVar(&season, "s", 0, "Season number (TV only)")
-	fs.IntVar(&season, "season", 0, "Season number (TV only)")
-	fs.IntVar(&disc, "d", 0, "Disc number (TV only)")
-	fs.IntVar(&disc, "disc", 0, "Disc number (TV only)")
-	fs.StringVar(&discPath, "disc-path", "disc:0", "Path to disc device")
-	fs.StringVar(&dbPath, "db", "", "Path to SQLite database")
-	fs.Int64Var(&jobID, "job-id", 0, "Job ID to resume (TUI dispatch mode)")
-
-	if err := fs.Parse(args); err != nil {
-		return nil, err
-	}
-
-	// Validate job-id mode
-	if jobID > 0 {
-		if dbPath == "" {
-			return nil, errors.New("-db is required when using -job-id")
-		}
-		// In job-id mode, other fields are loaded from the job
-		return &Options{
-			JobID:    jobID,
-			DBPath:   dbPath,
-			DiscPath: discPath,
-		}, nil
-	}
-
-	// Validate standalone mode required fields
-	if typeStr == "" {
-		return nil, errors.New("type (-t) is required")
-	}
-	if name == "" {
-		return nil, errors.New("name (-n) is required")
-	}
-
-	// Parse type
-	var mediaType ripper.MediaType
-	switch strings.ToLower(typeStr) {
-	case "movie":
-		mediaType = ripper.MediaTypeMovie
-	case "tv", "show":
-		mediaType = ripper.MediaTypeTV
-	default:
-		return nil, fmt.Errorf("invalid type %q: must be movie, tv, or show", typeStr)
-	}
-
-	// Validate TV-specific requirements
-	if mediaType == ripper.MediaTypeTV {
-		if season <= 0 {
-			return nil, errors.New("season (-s) is required for TV shows")
-		}
-		if disc <= 0 {
-			return nil, errors.New("disc (-d) is required for TV shows")
-		}
-	}
-
-	return &Options{
-		Type:     mediaType,
-		Name:     name,
-		Season:   season,
-		Disc:     disc,
-		DiscPath: discPath,
-		DBPath:   dbPath,
-		JobID:    jobID,
-	}, nil
-}
-
-// DetermineMode returns the execution mode based on options
-func DetermineMode(opts *Options) Mode {
-	if opts.JobID > 0 {
-		return ModeJobDispatch
-	}
-	if opts.DBPath != "" {
-		return ModeStandaloneWithDB
-	}
-	return ModeStandaloneNoDB
-}
-
-// BuildConfig creates runtime configuration from options and environment
-func BuildConfig(opts *Options, env map[string]string) *Config {
-	config := &Config{
-		MediaBase: defaultMediaBase,
-	}
-
-	if env != nil {
-		if val, ok := env["MEDIA_BASE"]; ok && val != "" {
-			config.MediaBase = val
-		}
-		if val, ok := env["MAKEMKVCON_PATH"]; ok && val != "" {
-			config.MakeMKVConPath = val
-		}
-	}
-
-	return config
-}
-
-// BuildRipRequest creates a RipRequest from options
-func BuildRipRequest(opts *Options) *ripper.RipRequest {
-	return &ripper.RipRequest{
-		Type:     opts.Type,
-		Name:     opts.Name,
-		Season:   opts.Season,
-		Disc:     opts.Disc,
-		DiscPath: opts.DiscPath,
-	}
-}
-
-// LoadRipRequestFromJob loads a RipRequest from an existing database job
-func LoadRipRequestFromJob(database *db.DB, jobID int64) (*ripper.RipRequest, error) {
-	ctx := context.Background()
-	repo := db.NewSQLiteRepository(database)
-
-	// Get the job
-	job, err := repo.GetJob(ctx, jobID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get job: %w", err)
-	}
-	if job == nil {
-		return nil, fmt.Errorf("job %d not found", jobID)
-	}
-
-	// Get the media item
-	item, err := repo.GetMediaItem(ctx, job.MediaItemID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get media item: %w", err)
-	}
-	if item == nil {
-		return nil, fmt.Errorf("media item %d not found", job.MediaItemID)
-	}
-
-	// Build RipRequest from job and media item
+// buildRipRequest creates a RipRequest from job and media item
+func buildRipRequest(ctx context.Context, repo db.Repository, job *model.Job, item *model.MediaItem, discPath string) (*ripper.RipRequest, error) {
 	req := &ripper.RipRequest{
 		Name:     item.Name,
-		DiscPath: "disc:0", // Default disc path
+		DiscPath: discPath,
 	}
 
 	// Set type
 	switch item.Type {
-	case "movie":
+	case model.MediaTypeMovie:
 		req.Type = ripper.MediaTypeMovie
-	case "tv":
+	case model.MediaTypeTV:
 		req.Type = ripper.MediaTypeTV
 	default:
 		return nil, fmt.Errorf("unknown media type: %s", item.Type)
@@ -337,16 +156,12 @@ func LoadRipRequestFromJob(database *db.DB, jobID int64) (*ripper.RipRequest, er
 
 	// Set TV-specific fields
 	if req.Type == ripper.MediaTypeTV {
-		// Get season number from the Season model (via job.SeasonID)
 		if job.SeasonID == nil {
 			return nil, fmt.Errorf("TV show job missing season_id")
 		}
 		season, err := repo.GetSeason(ctx, *job.SeasonID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get season: %w", err)
-		}
-		if season == nil {
-			return nil, fmt.Errorf("season %d not found", *job.SeasonID)
 		}
 		req.Season = season.Number
 
@@ -359,10 +174,23 @@ func LoadRipRequestFromJob(database *db.DB, jobID int64) (*ripper.RipRequest, er
 	return req, nil
 }
 
-// getEnvMap returns environment variables as a map
-func getEnvMap() map[string]string {
-	return map[string]string{
-		"MEDIA_BASE":      os.Getenv("MEDIA_BASE"),
-		"MAKEMKVCON_PATH": os.Getenv("MAKEMKVCON_PATH"),
+// buildOutputDir constructs the output directory path
+func buildOutputDir(stagingBase string, req *ripper.RipRequest) string {
+	safeName := req.SafeName()
+
+	switch req.Type {
+	case ripper.MediaTypeMovie:
+		return filepath.Join(stagingBase, "1-ripped", "movies", safeName)
+	case ripper.MediaTypeTV:
+		season := fmt.Sprintf("S%02d", req.Season)
+		disc := fmt.Sprintf("Disc%d", req.Disc)
+		return filepath.Join(stagingBase, "1-ripped", "tv", safeName, season, disc)
+	default:
+		return filepath.Join(stagingBase, "1-ripped", "other", safeName)
 	}
+}
+
+// loggerAdapter adapts logging.Logger to ripper.Logger interface
+type loggerAdapter struct {
+	*logging.Logger
 }
