@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -91,6 +93,9 @@ func (a *App) renderMovieDetail(item *model.MediaItem) string {
 				statusIcon = "✗"
 			}
 			b.WriteString(fmt.Sprintf("  %s %s\n", statusIcon, job.Stage.DisplayName()))
+
+			// Add transcode progress if applicable
+			b.WriteString(a.renderTranscodeProgress(&job))
 		}
 		b.WriteString("\n")
 	}
@@ -201,6 +206,47 @@ func (a *App) renderTVShowDetail(item *model.MediaItem) string {
 
 	// Help
 	b.WriteString(helpStyle.Render("[Enter] View Season  [a] Add Season  [r] Refresh  [Esc] Back  [q] Quit"))
+
+	return b.String()
+}
+
+// renderTranscodeProgress renders transcode progress for a job
+func (a *App) renderTranscodeProgress(job *model.Job) string {
+	// Only show progress for transcode jobs that are in progress
+	if job.Stage != model.StageTranscode || job.Status != model.JobStatusInProgress {
+		return ""
+	}
+
+	ctx := context.Background()
+	files, err := a.repo.ListTranscodeFiles(ctx, job.ID)
+	if err != nil || len(files) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("\n")
+
+	// Count completed files and find current file
+	completed := 0
+	var currentFile *model.TranscodeFile
+	for i := range files {
+		switch files[i].Status {
+		case model.TranscodeFileStatusCompleted:
+			completed++
+		case model.TranscodeFileStatusInProgress:
+			currentFile = &files[i]
+		}
+	}
+
+	// Overall file progress
+	b.WriteString(fmt.Sprintf("    Files: %d/%d completed\n", completed, len(files)))
+
+	// Current file name and percentage
+	if currentFile != nil {
+		b.WriteString(fmt.Sprintf("    Current: %s (%d%%)\n",
+			filepath.Base(currentFile.RelativePath),
+			currentFile.Progress))
+	}
 
 	return b.String()
 }
