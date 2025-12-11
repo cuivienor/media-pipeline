@@ -46,6 +46,13 @@ func run(jobID int64, dbPath string) error {
 
 	repo := db.NewSQLiteRepository(database)
 
+	// Helper to mark job as failed
+	markFailed := func(errMsg string) {
+		if updateErr := repo.UpdateJobStatus(ctx, jobID, model.JobStatusFailed, errMsg); updateErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to update job status: %v\n", updateErr)
+		}
+	}
+
 	// Get job
 	job, err := repo.GetJob(ctx, jobID)
 	if err != nil {
@@ -55,22 +62,26 @@ func run(jobID int64, dbPath string) error {
 	// Get media item
 	item, err := repo.GetMediaItem(ctx, job.MediaItemID)
 	if err != nil {
+		markFailed(err.Error())
 		return fmt.Errorf("failed to get media item: %w", err)
 	}
 
 	// Load config
 	cfg, err := config.LoadFromMediaBase()
 	if err != nil {
+		markFailed(err.Error())
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Set up logging
 	if err := cfg.EnsureJobLogDir(jobID); err != nil {
+		markFailed(err.Error())
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 	logPath := cfg.JobLogPath(jobID)
 	logger, err := logging.NewForJob(logPath, true, nil)
 	if err != nil {
+		markFailed(err.Error())
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 	defer logger.Close()
@@ -102,6 +113,7 @@ func run(jobID int64, dbPath string) error {
 	if opts.Mode == "hardware" {
 		if err := transcode.CheckHardwareSupport(); err != nil {
 			logger.Error("Hardware encoding requested but not available: %v", err)
+			markFailed(fmt.Sprintf("hardware encoding not available: %v", err))
 			return fmt.Errorf("hardware encoding not available: %w", err)
 		}
 		logger.Info("Hardware encoding (QSV) available")
@@ -111,6 +123,7 @@ func run(jobID int64, dbPath string) error {
 	inputDir, err := findRemuxOutput(ctx, repo, job)
 	if err != nil {
 		logger.Error("Failed to find input: %v", err)
+		markFailed(err.Error())
 		return fmt.Errorf("failed to find input: %w", err)
 	}
 
@@ -118,6 +131,7 @@ func run(jobID int64, dbPath string) error {
 	outputDir, err := buildOutputPath(ctx, repo, cfg, item, job)
 	if err != nil {
 		logger.Error("Failed to build output path: %v", err)
+		markFailed(err.Error())
 		return fmt.Errorf("failed to build output path: %w", err)
 	}
 
@@ -131,6 +145,7 @@ func run(jobID int64, dbPath string) error {
 	now := time.Now()
 	job.StartedAt = &now
 	if err := repo.UpdateJob(ctx, job); err != nil {
+		markFailed(err.Error())
 		return fmt.Errorf("failed to update job status: %w", err)
 	}
 
@@ -141,9 +156,7 @@ func run(jobID int64, dbPath string) error {
 	err = transcoder.TranscodeJob(ctx, job, inputDir, outputDir, isTV)
 	if err != nil {
 		logger.Error("Transcode failed: %v", err)
-		if updateErr := repo.UpdateJobStatus(ctx, jobID, model.JobStatusFailed, err.Error()); updateErr != nil {
-			logger.Error("Failed to update job status: %v", updateErr)
-		}
+		markFailed(err.Error())
 		return err
 	}
 
