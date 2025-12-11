@@ -69,7 +69,7 @@ func run(jobID int64, dbPath string) error {
 	if item.DatabaseID() == 0 {
 		errMsg := "media item missing database ID (set tmdb_id for movies, tvdb_id for TV)"
 		markFailed(errMsg)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	// Load config
@@ -116,8 +116,8 @@ func run(jobID int64, dbPath string) error {
 
 	// Create publisher
 	opts := publish.PublishOptions{
-		LibraryMovies: cfg.LibraryBase + "/movies",
-		LibraryTV:     cfg.LibraryBase + "/tv",
+		LibraryMovies: cfg.LibraryMoviesPath(),
+		LibraryTV:     cfg.LibraryTVPath(),
 	}
 	publisher := publish.NewPublisher(repo, logger, opts)
 

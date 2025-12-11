@@ -138,6 +138,16 @@ func (c *Config) TranscodeHWPreset() string {
 	return c.Transcode.HWPreset
 }
 
+// LibraryMoviesPath returns the path to the movies library
+func (c *Config) LibraryMoviesPath() string {
+	return filepath.Join(c.LibraryBase, "movies")
+}
+
+// LibraryTVPath returns the path to the TV library
+func (c *Config) LibraryTVPath() string {
+	return filepath.Join(c.LibraryBase, "tv")
+}
+
 // Load reads configuration from a YAML file
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
