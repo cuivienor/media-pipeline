@@ -11,6 +11,7 @@ import (
 
 	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/logging"
+	"github.com/cuivienor/media-pipeline/internal/model"
 	"github.com/cuivienor/media-pipeline/internal/ripper"
 )
 
@@ -64,12 +65,23 @@ func main() {
 		defer database.Close()
 	}
 
+	// Helper to mark job as failed (only works in job dispatch mode)
+	markFailed := func(errMsg string) {
+		if opts.JobID > 0 && database != nil {
+			repo := db.NewSQLiteRepository(database)
+			if updateErr := repo.UpdateJobStatus(context.Background(), opts.JobID, model.JobStatusFailed, errMsg); updateErr != nil {
+				fmt.Fprintf(os.Stderr, "Failed to update job status: %v\n", updateErr)
+			}
+		}
+	}
+
 	// Build request first (we need it to determine log path)
 	var req *ripper.RipRequest
 	if opts.JobID > 0 {
 		// Job-id mode: load request from database
 		req, err = LoadRipRequestFromJob(database, opts.JobID)
 		if err != nil {
+			markFailed(err.Error())
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -92,6 +104,7 @@ func main() {
 		// Job dispatch mode: use standard log location
 		logDir := filepath.Join(config.MediaBase, "pipeline", "logs", "jobs", fmt.Sprintf("%d", opts.JobID))
 		if err := os.MkdirAll(logDir, 0755); err != nil {
+			markFailed(err.Error())
 			fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
 			os.Exit(1)
 		}
@@ -110,6 +123,7 @@ func main() {
 	// Create logger
 	logger, err := logging.NewForJob(logPath, true, nil)
 	if err != nil {
+		markFailed(err.Error())
 		fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
 		os.Exit(1)
 	}
@@ -121,6 +135,7 @@ func main() {
 	// Run the rip
 	result, err := r.Rip(context.Background(), req)
 	if err != nil {
+		// Note: r.Rip already marks job as failed via StateManager.SetError
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

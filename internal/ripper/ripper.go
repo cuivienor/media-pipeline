@@ -93,6 +93,8 @@ func (r *Ripper) Rip(ctx context.Context, req *RipRequest) (*RipResult, error) {
 	// Create organization scaffolding for manual review
 	if err := CreateOrganizationScaffolding(outputDir, req); err != nil {
 		r.logger.Error("Failed to create organization scaffolding: %v", err)
+		r.state.SetStatus(outputDir, model.StatusFailed)
+		r.state.SetError(outputDir, err)
 		return nil, fmt.Errorf("failed to create organization scaffolding: %w", err)
 	}
 
@@ -100,6 +102,7 @@ func (r *Ripper) Rip(ctx context.Context, req *RipRequest) (*RipResult, error) {
 	r.logger.Info("Marking rip as complete...")
 	if err := r.state.Complete(outputDir); err != nil {
 		r.logger.Error("Failed to complete state: %v", err)
+		r.state.SetError(outputDir, err)
 		return nil, fmt.Errorf("failed to complete state: %w", err)
 	}
 
