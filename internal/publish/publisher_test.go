@@ -77,3 +77,16 @@ func TestPublisher_FindExtras(t *testing.T) {
 		t.Errorf("expected 2 extras dirs, got %d", len(extras))
 	}
 }
+
+func TestPublisher_RunFilebot_ParsesOutput(t *testing.T) {
+	// Test that we correctly parse FileBot output to extract destination paths
+	output := `Rename movies using [TheMovieDB]
+[COPY] from [/input/Movie.mkv] to [/library/movies/Movie (2024)/Movie (2024).mkv]`
+
+	dest := parseFilebotDestination(output)
+	expected := "/library/movies/Movie (2024)"
+
+	if dest != expected {
+		t.Errorf("expected %q, got %q", expected, dest)
+	}
+}

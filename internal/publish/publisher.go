@@ -3,7 +3,9 @@ package publish
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 
 	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/logging"
@@ -94,4 +96,23 @@ func (p *Publisher) findExtras(inputDir string) []ExtraDir {
 	}
 
 	return extras
+}
+
+// runFilebot executes FileBot and returns the output
+func (p *Publisher) runFilebot(args []string) (string, error) {
+	cmd := exec.Command("filebot", args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// parseFilebotDestination extracts the library destination from FileBot output
+func parseFilebotDestination(output string) string {
+	// Pattern: [COPY] from [...] to [/path/to/dest/file.mkv]
+	re := regexp.MustCompile(`\[COPY\] from .* to \[([^\]]+)\]`)
+	matches := re.FindStringSubmatch(output)
+	if len(matches) >= 2 {
+		// Return parent directory of the copied file
+		return filepath.Dir(matches[1])
+	}
+	return ""
 }
