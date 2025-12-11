@@ -1,4 +1,4 @@
-.PHONY: build build-local build-all build-mock-makemkv build-ripper build-stubs deploy run-remote clean test test-contracts test-e2e test-all fmt vet deploy-dev dev
+.PHONY: build build-local build-all build-mock-makemkv build-ripper build-publish build-stubs deploy run-remote clean test test-contracts test-e2e test-all fmt vet deploy-dev dev
 
 # Build for Linux (production target)
 build:
@@ -15,6 +15,10 @@ build-mock-makemkv:
 # Build ripper CLI
 build-ripper:
 	go build -o bin/ripper ./cmd/ripper
+
+# Build publish CLI
+build-publish:
+	go build -o bin/publish ./cmd/publish
 
 # Build stub stage commands (remux, transcode, publish)
 build-stubs:
