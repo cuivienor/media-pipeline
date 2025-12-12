@@ -40,10 +40,10 @@ func TestPublisher_BuildFilebotArgs_Movie(t *testing.T) {
 	expected := []string{
 		"-rename", "/input/dir",
 		"--db", "TheMovieDB",
+		"--q", "12345",
 		"--output", "/mnt/media/library/movies",
 		"--format", "{n} ({y})/{n} ({y})",
 		"-non-strict",
-		"--filter", "id == 12345",
 		"--action", "copy",
 	}
 
@@ -62,10 +62,10 @@ func TestPublisher_BuildFilebotArgs_TV(t *testing.T) {
 	expected := []string{
 		"-rename", "/input/dir",
 		"--db", "TheTVDB",
+		"--q", "67890",
 		"--output", "/mnt/media/library/tv",
 		"--format", "{n}/Season {s.pad(2)}/{n} - {s00e00} - {t}",
 		"-non-strict",
-		"--filter", "id == 67890",
 		"--action", "copy",
 	}
 
@@ -75,12 +75,12 @@ func TestPublisher_BuildFilebotArgs_TV(t *testing.T) {
 }
 
 func TestPublisher_FindExtras(t *testing.T) {
-	// Create temp directory structure
+	// Create temp directory structure matching transcode output (_extras/<type>/)
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "featurettes"), 0755)
-	os.MkdirAll(filepath.Join(dir, "deleted scenes"), 0755)
-	os.WriteFile(filepath.Join(dir, "featurettes", "making_of.mkv"), []byte{}, 0644)
-	os.WriteFile(filepath.Join(dir, "deleted scenes", "scene1.mkv"), []byte{}, 0644)
+	os.MkdirAll(filepath.Join(dir, "_extras", "featurettes"), 0755)
+	os.MkdirAll(filepath.Join(dir, "_extras", "deleted scenes"), 0755)
+	os.WriteFile(filepath.Join(dir, "_extras", "featurettes", "making_of.mkv"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(dir, "_extras", "deleted scenes", "scene1.mkv"), []byte{}, 0644)
 
 	p := NewPublisher(nil, nil, PublishOptions{})
 	extras := p.findExtras(dir)

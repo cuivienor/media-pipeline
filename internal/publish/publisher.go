@@ -72,20 +72,22 @@ func (p *Publisher) buildFilebotArgs(inputDir string, mediaType string, dbID int
 	return []string{
 		"-rename", inputDir,
 		"--db", db,
+		"--q", fmt.Sprintf("%d", dbID),
 		"--output", output,
 		"--format", format,
 		"-non-strict",
-		"--filter", fmt.Sprintf("id == %d", dbID),
 		"--action", "copy",
 	}
 }
 
-// findExtras scans for Jellyfin-compatible extras directories
+// findExtras scans for Jellyfin-compatible extras in _extras/<type>/
 func (p *Publisher) findExtras(inputDir string) []ExtraDir {
 	var extras []ExtraDir
 
+	extrasBase := filepath.Join(inputDir, "_extras")
+
 	for _, extType := range extrasTypes {
-		extPath := filepath.Join(inputDir, extType)
+		extPath := filepath.Join(extrasBase, extType)
 		if info, err := os.Stat(extPath); err == nil && info.IsDir() {
 			files, _ := filepath.Glob(filepath.Join(extPath, "*.mkv"))
 			if len(files) > 0 {
@@ -201,8 +203,11 @@ func (p *Publisher) Publish(ctx context.Context, item *model.MediaItem, inputDir
 
 	mediaType := string(item.Type)
 
-	// Run FileBot
-	args := p.buildFilebotArgs(inputDir, mediaType, dbID)
+	// Transcode outputs to _main/ subdirectory - use that for FileBot
+	mainDir := filepath.Join(inputDir, "_main")
+
+	// Run FileBot on main content
+	args := p.buildFilebotArgs(mainDir, mediaType, dbID)
 	if p.logger != nil {
 		p.logger.Info("Running FileBot: filebot %s", strings.Join(args, " "))
 	}
