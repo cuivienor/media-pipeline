@@ -136,6 +136,6 @@ func (m *mockRunner) GetDiscInfo(ctx context.Context, discPath string) (*DiscInf
 	return &DiscInfo{}, nil
 }
 
-func (m *mockRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, progress ProgressCallback) error {
+func (m *mockRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, onLine LineCallback, onProgress ProgressCallback) error {
 	return nil
 }

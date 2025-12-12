@@ -120,6 +120,9 @@ type Progress struct {
 // ProgressCallback is called with progress updates during ripping
 type ProgressCallback func(Progress)
 
+// LineCallback is called with each line of MakeMKV output for logging
+type LineCallback func(line string)
+
 // MakeMKVRunner abstracts makemkvcon execution for testing
 type MakeMKVRunner interface {
 	// GetDiscInfo retrieves information about a disc
@@ -127,7 +130,9 @@ type MakeMKVRunner interface {
 
 	// RipTitles rips specified titles from a disc
 	// If titleIndices is nil or empty, rips all titles
-	RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, progress ProgressCallback) error
+	// onLine is called with each line of output for logging
+	// onProgress is called with progress updates
+	RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, onLine LineCallback, onProgress ProgressCallback) error
 }
 
 // Logger provides logging for ripper operations

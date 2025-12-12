@@ -26,6 +26,7 @@ type Job struct {
 	OutputDir    string
 	LogPath      string
 	ErrorMessage string
+	Progress     int // 0-100 percentage
 	StartedAt    *time.Time
 	CompletedAt  *time.Time
 	CreatedAt    time.Time

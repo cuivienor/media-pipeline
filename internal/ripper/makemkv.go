@@ -58,23 +58,23 @@ func (r *DefaultMakeMKVRunner) GetDiscInfo(ctx context.Context, discPath string)
 
 // RipTitles rips specified titles from a disc
 // If titleIndices is nil or empty, rips all titles
-func (r *DefaultMakeMKVRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, progress ProgressCallback) error {
+func (r *DefaultMakeMKVRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, onLine LineCallback, onProgress ProgressCallback) error {
 	// If specific titles requested, rip each one
 	// Otherwise, use "all" to rip everything
 	if len(titleIndices) > 0 {
 		for _, idx := range titleIndices {
-			if err := r.ripTitle(ctx, discPath, outputDir, idx, progress); err != nil {
+			if err := r.ripTitle(ctx, discPath, outputDir, idx, onLine, onProgress); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
-	return r.ripAllTitles(ctx, discPath, outputDir, progress)
+	return r.ripAllTitles(ctx, discPath, outputDir, onLine, onProgress)
 }
 
 // ripTitle rips a single title
-func (r *DefaultMakeMKVRunner) ripTitle(ctx context.Context, discPath, outputDir string, titleIdx int, progress ProgressCallback) error {
+func (r *DefaultMakeMKVRunner) ripTitle(ctx context.Context, discPath, outputDir string, titleIdx int, onLine LineCallback, onProgress ProgressCallback) error {
 	args := []string{"-r", "--noscan", "mkv", discPath, strconv.Itoa(titleIdx), outputDir}
 
 	cmd := r.execCommand(ctx, r.makemkvconPath, args...)
@@ -91,7 +91,10 @@ func (r *DefaultMakeMKVRunner) ripTitle(ctx context.Context, discPath, outputDir
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
-		r.handleProgressLine(line, progress)
+		if onLine != nil {
+			onLine(line)
+		}
+		r.handleProgressLine(line, onProgress)
 	}
 
 	if err := cmd.Wait(); err != nil {
@@ -102,7 +105,7 @@ func (r *DefaultMakeMKVRunner) ripTitle(ctx context.Context, discPath, outputDir
 }
 
 // ripAllTitles rips all titles from a disc
-func (r *DefaultMakeMKVRunner) ripAllTitles(ctx context.Context, discPath, outputDir string, progress ProgressCallback) error {
+func (r *DefaultMakeMKVRunner) ripAllTitles(ctx context.Context, discPath, outputDir string, onLine LineCallback, onProgress ProgressCallback) error {
 	args := r.buildMkvArgs(discPath, outputDir, nil)
 
 	cmd := r.execCommand(ctx, r.makemkvconPath, args...)
@@ -119,7 +122,10 @@ func (r *DefaultMakeMKVRunner) ripAllTitles(ctx context.Context, discPath, outpu
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
-		r.handleProgressLine(line, progress)
+		if onLine != nil {
+			onLine(line)
+		}
+		r.handleProgressLine(line, onProgress)
 	}
 
 	if err := cmd.Wait(); err != nil {

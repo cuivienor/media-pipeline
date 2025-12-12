@@ -35,7 +35,9 @@ func NewRipper(stagingBase string, runner MakeMKVRunner, logger Logger) *Ripper 
 }
 
 // Rip performs the disc ripping operation
-func (r *Ripper) Rip(ctx context.Context, req *RipRequest, outputDir string) (*RipResult, error) {
+// onLine is called with each line of MakeMKV output for logging
+// onProgress is called with progress updates (0-100)
+func (r *Ripper) Rip(ctx context.Context, req *RipRequest, outputDir string, onLine LineCallback, onProgress ProgressCallback) (*RipResult, error) {
 	// Validate request
 	if err := req.Validate(); err != nil {
 		r.logger.Error("Invalid request: %v", err)
@@ -57,7 +59,7 @@ func (r *Ripper) Rip(ctx context.Context, req *RipRequest, outputDir string) (*R
 
 	// Run ripping
 	r.logger.Info("Starting MakeMKV rip from %s", req.DiscPath)
-	err := r.runner.RipTitles(ctx, req.DiscPath, outputDir, nil, nil)
+	err := r.runner.RipTitles(ctx, req.DiscPath, outputDir, nil, onLine, onProgress)
 	if err != nil {
 		r.logger.Error("Rip failed: %v", err)
 		result.Status = model.StatusFailed

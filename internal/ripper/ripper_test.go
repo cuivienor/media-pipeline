@@ -62,7 +62,7 @@ func TestRipper_Rip_CreatesOutputDirectory(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	_, err := ripper.Rip(context.Background(), req, outputDir)
+	_, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestRipper_Rip_CallsMakeMKVRunner(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	ripper.Rip(context.Background(), req, outputDir)
+	ripper.Rip(context.Background(), req, outputDir, nil, nil)
 
 	if !mockRunner.ripTitlesCalled {
 		t.Error("MakeMKVRunner.RipTitles was not called")
@@ -107,7 +107,7 @@ func TestRipper_Rip_ReturnsCompletedStatusOnSuccess(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	result, err := ripper.Rip(context.Background(), req, outputDir)
+	result, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestRipper_Rip_ReturnsFailedStatusOnError(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	result, err := ripper.Rip(context.Background(), req, outputDir)
+	result, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 
 	if err == nil {
 		t.Error("Expected error from Rip")
@@ -158,7 +158,7 @@ func TestRipper_Rip_ReturnsRipResult(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	result, err := ripper.Rip(context.Background(), req, outputDir)
+	result, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestRipper_Rip_ValidatesRequest(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "")
-	_, err := ripper.Rip(context.Background(), req, outputDir)
+	_, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 	if err == nil {
 		t.Error("Expected validation error for missing name")
 	}
@@ -215,7 +215,7 @@ func TestRipper_Rip_CreatesOrganizationScaffolding(t *testing.T) {
 	}
 
 	outputDir := filepath.Join(tmpDir, "1-ripped", "movies", "Test_Movie")
-	_, err := ripper.Rip(context.Background(), req, outputDir)
+	_, err := ripper.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -256,7 +256,7 @@ func (m *testMakeMKVRunner) GetDiscInfo(ctx context.Context, discPath string) (*
 	}, nil
 }
 
-func (m *testMakeMKVRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, progress ProgressCallback) error {
+func (m *testMakeMKVRunner) RipTitles(ctx context.Context, discPath, outputDir string, titleIndices []int, onLine LineCallback, onProgress ProgressCallback) error {
 	m.ripTitlesCalled = true
 	return m.ripError
 }

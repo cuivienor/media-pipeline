@@ -122,7 +122,23 @@ func run(jobID int64, dbPath string, discPath string) error {
 	runner := ripper.NewMakeMKVRunner(makeMKVConPath)
 	r := ripper.NewRipper(stagingBase, runner, &loggerAdapter{logger})
 
-	result, err := r.Rip(ctx, req, outputDir)
+	// Create callbacks for line logging and progress updates
+	onLine := func(line string) {
+		// Log raw MakeMKV output to the job log
+		logger.Info("[makemkv] %s", line)
+	}
+
+	lastProgress := 0
+	onProgress := func(p ripper.Progress) {
+		percent := int(p.Percent)
+		// Only update on 1% increments to avoid excessive DB writes
+		if percent > lastProgress {
+			lastProgress = percent
+			repo.UpdateJobProgress(ctx, jobID, percent)
+		}
+	}
+
+	result, err := r.Rip(ctx, req, outputDir, onLine, onProgress)
 	if err != nil {
 		logger.Error("Rip failed: %v", err)
 		markFailed(err.Error())

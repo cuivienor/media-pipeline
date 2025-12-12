@@ -68,7 +68,7 @@ func TestRipper_E2E_MovieRip(t *testing.T) {
 	outputDir := r.BuildOutputDir(req)
 
 	// Run the rip
-	result, err := r.Rip(context.Background(), req, outputDir)
+	result, err := r.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRipper_E2E_TVShowRip(t *testing.T) {
 	outputDir := r.BuildOutputDir(req)
 
 	// Run the rip
-	result, err := r.Rip(context.Background(), req, outputDir)
+	result, err := r.Rip(context.Background(), req, outputDir, nil, nil)
 	if err != nil {
 		t.Fatalf("Rip failed: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestRipper_E2E_MultipleTVShowDiscs(t *testing.T) {
 		}
 
 		outputDir := r.BuildOutputDir(req)
-		_, err := r.Rip(context.Background(), req, outputDir)
+		_, err := r.Rip(context.Background(), req, outputDir, nil, nil)
 		if err != nil {
 			t.Fatalf("Rip of disc %d failed: %v", disc, err)
 		}

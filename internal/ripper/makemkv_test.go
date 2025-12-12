@@ -61,7 +61,7 @@ PRGV:65536,0,65536`)
 		},
 	}
 
-	err := runner.RipTitles(context.Background(), "disc:0", tmpDir, nil, func(p Progress) {
+	err := runner.RipTitles(context.Background(), "disc:0", tmpDir, nil, nil, func(p Progress) {
 		progressCalls++
 		lastProgress = p
 	})

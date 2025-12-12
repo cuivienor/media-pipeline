@@ -548,6 +548,18 @@ func (r *SQLiteRepository) UpdateJobStatus(ctx context.Context, id int64, status
 	return nil
 }
 
+// UpdateJobProgress updates a job's progress percentage (0-100)
+func (r *SQLiteRepository) UpdateJobProgress(ctx context.Context, id int64, progress int) error {
+	query := `UPDATE jobs SET progress = ? WHERE id = ?`
+
+	_, err := r.db.db.ExecContext(ctx, query, progress, id)
+	if err != nil {
+		return fmt.Errorf("failed to update job progress: %w", err)
+	}
+
+	return nil
+}
+
 // ListJobsForMedia lists all jobs for a media item
 func (r *SQLiteRepository) ListJobsForMedia(ctx context.Context, mediaItemID int64) ([]model.Job, error) {
 	query := `

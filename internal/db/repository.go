@@ -20,6 +20,7 @@ type Repository interface {
 	GetActiveJobForStage(ctx context.Context, mediaItemID int64, stage model.Stage, disc *int) (*model.Job, error)
 	UpdateJob(ctx context.Context, job *model.Job) error
 	UpdateJobStatus(ctx context.Context, id int64, status model.JobStatus, errorMsg string) error
+	UpdateJobProgress(ctx context.Context, id int64, progress int) error
 	ListJobsForMedia(ctx context.Context, mediaItemID int64) ([]model.Job, error)
 
 	// Log events
