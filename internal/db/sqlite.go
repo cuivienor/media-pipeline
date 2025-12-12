@@ -952,12 +952,11 @@ func (r *SQLiteRepository) UpdateMediaItemStage(ctx context.Context, id int64, s
 	return nil
 }
 
-// ListActiveItems lists all items that are not completed
+// ListActiveItems lists all items (including completed - history filtering will be added later)
 func (r *SQLiteRepository) ListActiveItems(ctx context.Context) ([]model.MediaItem, error) {
 	query := `
 		SELECT id, type, name, safe_name, tmdb_id, tvdb_id, status, current_stage, stage_status, created_at, updated_at
 		FROM media_items
-		WHERE status != 'completed'
 		ORDER BY updated_at DESC
 	`
 	rows, err := r.db.db.QueryContext(ctx, query)

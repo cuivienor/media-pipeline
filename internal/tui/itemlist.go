@@ -8,6 +8,9 @@ import (
 	"github.com/cuivienor/media-pipeline/internal/model"
 )
 
+// statusDone is a special status for fully completed items (publish done)
+const statusDone model.Status = "done"
+
 // renderItemList renders the main item list view
 func (a *App) renderItemList() string {
 	var b strings.Builder
@@ -27,6 +30,7 @@ func (a *App) renderItemList() string {
 	inProgress := a.filterItemsByCategory(model.StatusInProgress)
 	failed := a.filterItemsByCategory(model.StatusFailed)
 	notStarted := a.filterItemsByCategory(model.StatusPending)
+	done := a.filterItemsByCategory(statusDone)
 
 	cursorIndex := 0
 
@@ -82,7 +86,20 @@ func (a *App) renderItemList() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(helpStyle.Render("[Enter] View  [n] New Item  [r] Refresh  [h] History  [q] Quit"))
+	// Done section (fully completed items)
+	if len(done) > 0 {
+		b.WriteString(sectionHeaderStyle.Render("DONE"))
+		b.WriteString("\n")
+		for _, item := range done {
+			selected := cursorIndex == a.cursor
+			b.WriteString(a.renderItemRow(item, selected))
+			b.WriteString("\n")
+			cursorIndex++
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString(helpStyle.Render("[Enter] View  [n] New Item  [r] Refresh  [q] Quit"))
 
 	return b.String()
 }
@@ -110,6 +127,9 @@ func (a *App) renderItemRow(item model.MediaItem, selected bool) string {
 	case model.StatusFailed:
 		statusIcon = "✗"
 		statusStyle = lipgloss.NewStyle().Foreground(colorError)
+	case statusDone:
+		statusIcon = "✓"
+		statusStyle = lipgloss.NewStyle().Foreground(colorSuccess)
 	default:
 		statusIcon = "○"
 		statusStyle = lipgloss.NewStyle().Foreground(colorMuted)
@@ -206,13 +226,12 @@ func (a *App) getTVActionHint(item model.MediaItem, effectiveStatus model.Status
 
 // categorizeItem returns the display category for an item based on its most urgent status
 // Priority: Failed > InProgress > Mixed (treated as InProgress) > AllCompleted > AllPending
-// Note: Items at publish stage with completed status are considered "fully done" and return
-// a special status that won't match any visible section (they go to history).
+// Items at publish stage with completed status are categorized as "done".
 func (a *App) categorizeItem(item model.MediaItem) model.Status {
 	if item.Type == model.MediaTypeMovie {
-		// If publish is complete, the item is fully done - don't show in active lists
+		// If publish is complete, the item is fully done
 		if item.CurrentStage == model.StagePublish && item.StageStatus == model.StatusCompleted {
-			return "" // Empty status won't match any filter category
+			return statusDone
 		}
 		return item.StageStatus
 	}
@@ -257,9 +276,9 @@ func (a *App) categorizeItem(item model.MediaItem) model.Status {
 	if hasCompletedNeedsNext {
 		return model.StatusCompleted
 	}
-	// All seasons fully done - hide from active list
+	// All seasons fully done
 	if hasFullyDone && !hasPending {
-		return "" // Won't match any filter category
+		return statusDone
 	}
 	return model.StatusPending
 }
@@ -276,12 +295,13 @@ func (a *App) filterItemsByCategory(targetStatus model.Status) []model.MediaItem
 }
 
 // getDisplayOrderItems returns all items in the order they appear on screen
-// (NEEDS ACTION, IN PROGRESS, FAILED, NOT STARTED)
+// (NEEDS ACTION, IN PROGRESS, FAILED, NOT STARTED, DONE)
 func (a *App) getDisplayOrderItems() []model.MediaItem {
 	var result []model.MediaItem
 	result = append(result, a.filterItemsByCategory(model.StatusCompleted)...)
 	result = append(result, a.filterItemsByCategory(model.StatusInProgress)...)
 	result = append(result, a.filterItemsByCategory(model.StatusFailed)...)
 	result = append(result, a.filterItemsByCategory(model.StatusPending)...)
+	result = append(result, a.filterItemsByCategory(statusDone)...)
 	return result
 }
