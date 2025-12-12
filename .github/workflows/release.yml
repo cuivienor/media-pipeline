@@ -39,30 +39,39 @@ jobs:
       - name: Create tarball
         run: |
           mkdir -p dist/media-pipeline-linux-amd64
-          cp bin/media-pipeline bin/ripper bin/mock-makemkv dist/media-pipeline-linux-amd64/
+          cp bin/media-pipeline bin/ripper bin/remux bin/transcode bin/publish bin/mock-makemkv dist/media-pipeline-linux-amd64/
           cat > dist/media-pipeline-linux-amd64/README.md << 'EOF'
           # media-pipeline ${{ steps.version.outputs.VERSION }}
 
           ## Binaries
 
           - `media-pipeline` - TUI for monitoring pipeline status
-          - `ripper` - CLI for starting rip jobs
+          - `ripper` - CLI for ripping discs with MakeMKV
+          - `remux` - CLI for remuxing (track selection/filtering)
+          - `transcode` - CLI for H.265 encoding
+          - `publish` - CLI for organizing files to library with FileBot
           - `mock-makemkv` - Mock MakeMKV for testing (generates synthetic MKVs)
+
+          ## Pipeline Stages
+
+          ```
+          rip (ripper) → remux (remux) → transcode (transcode) → publish (publish)
+          ```
 
           ## Usage
 
           ```bash
-          # Add to PATH
+          # Add to PATH or symlink to /usr/local/bin
           export PATH=/path/to/extracted/dir:$PATH
 
-          # Run TUI
+          # Run TUI (primary interface)
           media-pipeline
 
-          # Rip a movie
-          ripper -t movie -n "Movie Name"
-
-          # Rip a TV show disc
-          ripper -t tv -n "Show Name" -s 1 -d 1
+          # Stage CLIs (typically dispatched via TUI)
+          ripper -job-id <id> -db /path/to/pipeline.db
+          remux -job-id <id> -db /path/to/pipeline.db
+          transcode -job-id <id> -db /path/to/pipeline.db
+          publish -job-id <id> -db /path/to/pipeline.db
           ```
 
           ## Environment Variables
