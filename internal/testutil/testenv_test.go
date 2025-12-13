@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -107,5 +108,32 @@ func TestTestEnv_CreateCompletedJob(t *testing.T) {
 	}
 	if job.Progress != 100 {
 		t.Errorf("Progress = %d, want 100", job.Progress)
+	}
+}
+
+func TestGenerateTestMKV(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+
+	tmpDir := t.TempDir()
+	outputPath := filepath.Join(tmpDir, "test.mkv")
+
+	err := GenerateTestMKV(outputPath, MKVOptions{
+		DurationSec: 1,
+		AudioLangs:  []string{"eng", "spa"},
+		SubLangs:    []string{"eng"},
+	})
+	if err != nil {
+		t.Fatalf("GenerateTestMKV error: %v", err)
+	}
+
+	// Verify file exists and is non-empty
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatalf("output file not created: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("output file is empty")
 	}
 }
