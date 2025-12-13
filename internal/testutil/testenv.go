@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,4 +140,58 @@ func (e *TestEnv) CreateCompletedJob(mediaItemID int64, stage model.Stage, outpu
 	}
 
 	return job
+}
+
+// CreateMovieStructure creates an organized movie directory with a test MKV
+// stage is one of: "1-ripped", "2-remuxed", "3-transcoded"
+// Returns the full path to the movie directory
+func (e *TestEnv) CreateMovieStructure(safeName, stage string) string {
+	e.t.Helper()
+
+	movieDir := filepath.Join(e.StagingDir, stage, "movies", safeName)
+	mainDir := filepath.Join(movieDir, "_main")
+
+	if err := os.MkdirAll(mainDir, 0755); err != nil {
+		e.t.Fatalf("failed to create _main dir: %v", err)
+	}
+
+	// Generate test MKV
+	mkvPath := filepath.Join(mainDir, "movie.mkv")
+	if err := GenerateTestMKV(mkvPath, MKVOptions{
+		DurationSec: 1,
+		AudioLangs:  []string{"eng", "spa", "fra"},
+		SubLangs:    []string{"eng", "spa"},
+	}); err != nil {
+		e.t.Fatalf("failed to generate test MKV: %v", err)
+	}
+
+	return movieDir
+}
+
+// CreateTVStructure creates an organized TV season directory with numbered episode MKVs
+// stage is one of: "1-ripped", "2-remuxed", "3-transcoded"
+// Returns the full path to the season directory
+func (e *TestEnv) CreateTVStructure(safeName string, season, episodeCount int, stage string) string {
+	e.t.Helper()
+
+	seasonDir := filepath.Join(e.StagingDir, stage, "tv", safeName, fmt.Sprintf("Season_%02d", season))
+	episodesDir := filepath.Join(seasonDir, "_episodes")
+
+	if err := os.MkdirAll(episodesDir, 0755); err != nil {
+		e.t.Fatalf("failed to create _episodes dir: %v", err)
+	}
+
+	// Generate episode MKVs
+	for i := 1; i <= episodeCount; i++ {
+		mkvPath := filepath.Join(episodesDir, fmt.Sprintf("%02d.mkv", i))
+		if err := GenerateTestMKV(mkvPath, MKVOptions{
+			DurationSec: 1,
+			AudioLangs:  []string{"eng", "spa"},
+			SubLangs:    []string{"eng"},
+		}); err != nil {
+			e.t.Fatalf("failed to generate episode %d MKV: %v", i, err)
+		}
+	}
+
+	return seasonDir
 }

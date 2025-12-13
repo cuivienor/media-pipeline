@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/cuivienor/media-pipeline/internal/model"
@@ -135,5 +136,50 @@ func TestGenerateTestMKV(t *testing.T) {
 	}
 	if info.Size() == 0 {
 		t.Error("output file is empty")
+	}
+}
+
+func TestTestEnv_CreateMovieStructure(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+
+	env := NewTestEnv(t)
+
+	// Create organized movie structure in 1-ripped
+	dir := env.CreateMovieStructure("Test_Movie", "1-ripped")
+
+	// Verify _main directory with MKV
+	mainDir := filepath.Join(dir, "_main")
+	entries, err := os.ReadDir(mainDir)
+	if err != nil {
+		t.Fatalf("failed to read _main: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("expected 1 file in _main, got %d", len(entries))
+	}
+	if !strings.HasSuffix(entries[0].Name(), ".mkv") {
+		t.Errorf("expected .mkv file, got %s", entries[0].Name())
+	}
+}
+
+func TestTestEnv_CreateTVStructure(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+
+	env := NewTestEnv(t)
+
+	// Create organized TV structure in 1-ripped
+	dir := env.CreateTVStructure("Test_Show", 1, 3, "1-ripped") // Season 1, 3 episodes
+
+	// Verify _episodes directory with numbered MKVs
+	episodesDir := filepath.Join(dir, "_episodes")
+	entries, err := os.ReadDir(episodesDir)
+	if err != nil {
+		t.Fatalf("failed to read _episodes: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Errorf("expected 3 files in _episodes, got %d", len(entries))
 	}
 }
