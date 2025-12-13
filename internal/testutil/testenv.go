@@ -11,6 +11,7 @@ import (
 
 	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/model"
+	"github.com/cuivienor/media-pipeline/internal/pipeline/properties"
 )
 
 // TestEnv provides an isolated test environment with temp directories and in-memory database
@@ -194,4 +195,18 @@ func (e *TestEnv) CreateTVStructure(safeName string, season, episodeCount int, s
 	}
 
 	return seasonDir
+}
+
+// AssertInvariants runs all property invariants against the test database
+func (e *TestEnv) AssertInvariants() {
+	e.t.Helper()
+	ctx := context.Background()
+
+	if err := properties.AssertJobStatusConsistency(ctx, e.Repo); err != nil {
+		e.t.Errorf("invariant violation: %v", err)
+	}
+
+	if err := properties.AssertNoOrphanedJobs(ctx, e.Repo); err != nil {
+		e.t.Errorf("invariant violation: %v", err)
+	}
 }

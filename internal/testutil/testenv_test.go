@@ -215,3 +215,14 @@ func TestAssertions_FileExists(t *testing.T) {
 	// Should not panic
 	env.AssertFileExists("testfile.txt")
 }
+
+func TestTestEnv_AssertInvariants(t *testing.T) {
+	env := NewTestEnv(t)
+
+	// Create valid state
+	item := env.CreateMediaItem("Test_Movie", model.MediaTypeMovie)
+	env.CreateCompletedJob(item.ID, model.StageOrganize, "/output")
+
+	// Should not panic - all invariants pass
+	env.AssertInvariants()
+}
