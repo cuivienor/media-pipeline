@@ -63,6 +63,18 @@ test-e2e: build-mock-makemkv build-ripper
 # Run all tests
 test-all: test test-contracts test-e2e
 
+# Run testutil package tests
+test-testutil:
+	go test ./internal/testutil/... -v
+
+# Run contract tests (requires ffmpeg, mkvmerge)
+test-pipeline-contracts:
+	go test ./internal/pipeline/contracts/... -tags=integration -v
+
+# Run property tests
+test-properties:
+	go test ./internal/pipeline/properties/... -v
+
 # Format code
 fmt:
 	go fmt ./...
