@@ -4,6 +4,8 @@ package contracts
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -188,5 +190,118 @@ func TestTranscodeContract_TVHappyPath(t *testing.T) {
 	}
 
 	env.AssertJobCompleted(transcodeJob.ID)
+	env.AssertInvariants()
+}
+
+func TestTranscodeContract_ResumeAfterInterruption(t *testing.T) {
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not installed")
+	}
+
+	env := testutil.NewTestEnv(t)
+	ctx := context.Background()
+
+	// Setup: Create TV structure with 3 episodes
+	inputDir := env.CreateTVStructure("Test_Show", 1, 3, "2-remuxed")
+
+	// Create database records
+	item := env.CreateMediaItem("Test_Show", model.MediaTypeTV)
+	env.CreateCompletedJob(item.ID, model.StageRemux, inputDir)
+
+	// Create transcode job
+	now := time.Now()
+	transcodeJob := env.CreateJob(item.ID, model.StageTranscode)
+	transcodeJob.Status = model.JobStatusInProgress
+	transcodeJob.StartedAt = &now
+	transcodeJob.InputDir = inputDir
+	if err := env.Repo.UpdateJob(ctx, transcodeJob); err != nil {
+		t.Fatalf("UpdateJob error: %v", err)
+	}
+
+	outputDir := filepath.Join(env.StagingDir, "3-transcoded", "tv", "Test_Show", "Season_01")
+	opts := transcode.TranscodeOptions{
+		CRF:    28,
+		Mode:   "software",
+		Preset: "ultrafast",
+	}
+	logger := &testLogger{t}
+	transcoder := transcode.NewTranscoder(env.Repo, logger, opts)
+
+	// First run: Complete transcoding
+	err := transcoder.TranscodeJob(ctx, transcodeJob, inputDir, outputDir, true)
+	if err != nil {
+		t.Fatalf("First TranscodeJob error: %v", err)
+	}
+
+	// Verify 3 files completed
+	files, err := env.Repo.ListTranscodeFiles(ctx, transcodeJob.ID)
+	if err != nil {
+		t.Fatalf("ListTranscodeFiles error: %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("expected 3 transcode files, got %d", len(files))
+	}
+
+	completedCount := 0
+	for _, f := range files {
+		if f.Status == model.TranscodeFileStatusCompleted {
+			completedCount++
+		}
+	}
+	if completedCount != 3 {
+		t.Fatalf("expected 3 completed files, got %d", completedCount)
+	}
+
+	// "Interrupt" by resetting one file to pending and deleting its output
+	file := &files[1]
+	file.Status = model.TranscodeFileStatusPending
+	file.Progress = 0
+	file.OutputSize = 0
+	if err := env.Repo.UpdateTranscodeFile(ctx, file); err != nil {
+		t.Fatalf("UpdateTranscodeFile error: %v", err)
+	}
+
+	outputPath := filepath.Join(outputDir, file.RelativePath)
+	os.Remove(outputPath)
+
+	// Re-fetch job to get current state
+	resumeJob, err := env.Repo.GetJob(ctx, transcodeJob.ID)
+	if err != nil {
+		t.Fatalf("GetJob error: %v", err)
+	}
+	resumeJob.InputDir = inputDir
+
+	// Second run: Should only process the reset file
+	transcoder2 := transcode.NewTranscoder(env.Repo, logger, opts)
+	err = transcoder2.TranscodeJob(ctx, resumeJob, inputDir, outputDir, true)
+	if err != nil {
+		t.Fatalf("Resume TranscodeJob error: %v", err)
+	}
+
+	// Verify all files are completed again
+	files, err = env.Repo.ListTranscodeFiles(ctx, transcodeJob.ID)
+	if err != nil {
+		t.Fatalf("ListTranscodeFiles error: %v", err)
+	}
+	completedCount = 0
+	for _, f := range files {
+		if f.Status == model.TranscodeFileStatusCompleted {
+			completedCount++
+		}
+	}
+	if completedCount != 3 {
+		t.Errorf("after resume: expected 3 completed files, got %d", completedCount)
+	}
+
+	// Verify output files exist
+	for i := 1; i <= 3; i++ {
+		relPath := filepath.Join("staging/3-transcoded/tv/Test_Show/Season_01/_episodes",
+			fmt.Sprintf("%02d.mkv", i))
+		env.AssertFileNonEmpty(relPath)
+	}
+
 	env.AssertInvariants()
 }
