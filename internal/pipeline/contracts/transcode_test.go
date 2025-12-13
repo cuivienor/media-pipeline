@@ -106,3 +106,87 @@ func TestTranscodeContract_MovieHappyPath(t *testing.T) {
 	env.AssertJobCompleted(transcodeJob.ID)
 	env.AssertInvariants()
 }
+
+func TestTranscodeContract_TVHappyPath(t *testing.T) {
+	// Skip if ffmpeg/ffprobe not available
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	if _, err := exec.LookPath("ffprobe"); err != nil {
+		t.Skip("ffprobe not installed")
+	}
+
+	env := testutil.NewTestEnv(t)
+	ctx := context.Background()
+
+	// Setup: Create remuxed TV structure with 2 episodes
+	inputDir := env.CreateTVStructure("Test_Show", 1, 2, "2-remuxed")
+
+	// Create database records
+	item := env.CreateMediaItem("Test_Show", model.MediaTypeTV)
+	env.CreateCompletedJob(item.ID, model.StageRemux, inputDir)
+
+	// Create transcode job
+	now := time.Now()
+	transcodeJob := env.CreateJob(item.ID, model.StageTranscode)
+	transcodeJob.Status = model.JobStatusInProgress
+	transcodeJob.StartedAt = &now
+	transcodeJob.InputDir = inputDir
+	env.Repo.UpdateJobStatus(ctx, transcodeJob.ID, model.JobStatusInProgress, "")
+
+	// Execute transcode
+	outputDir := filepath.Join(env.StagingDir, "3-transcoded", "tv", "Test_Show", "Season_01")
+	opts := transcode.TranscodeOptions{
+		CRF:    28,
+		Mode:   "software",
+		Preset: "ultrafast",
+	}
+	logger := &testLogger{t}
+	transcoder := transcode.NewTranscoder(env.Repo, logger, opts)
+
+	err := transcoder.TranscodeJob(ctx, transcodeJob, inputDir, outputDir, true)
+	if err != nil {
+		t.Fatalf("TranscodeJob error: %v", err)
+	}
+
+	// Verify output structure - should have 2 episode files
+	env.AssertDirExists("staging/3-transcoded/tv/Test_Show/Season_01/_episodes")
+	env.AssertFileNonEmpty("staging/3-transcoded/tv/Test_Show/Season_01/_episodes/01.mkv")
+	env.AssertFileNonEmpty("staging/3-transcoded/tv/Test_Show/Season_01/_episodes/02.mkv")
+
+	// Verify transcode file records
+	files, err := env.Repo.ListTranscodeFiles(ctx, transcodeJob.ID)
+	if err != nil {
+		t.Fatalf("ListTranscodeFiles error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected 2 transcode files, got %d", len(files))
+	}
+
+	for i, f := range files {
+		if f.Status != model.TranscodeFileStatusCompleted {
+			t.Errorf("file %d: status = %v, want completed", i, f.Status)
+		}
+		if f.Progress != 100 {
+			t.Errorf("file %d: progress = %d, want 100", i, f.Progress)
+		}
+		if f.OutputSize == 0 {
+			t.Errorf("file %d: output size should be non-zero", i)
+		}
+		if f.OutputSize >= f.InputSize {
+			t.Logf("Warning: file %d output size %d >= input size %d (expected compression)",
+				i, f.OutputSize, f.InputSize)
+		}
+	}
+
+	// Mark job completed
+	if err := env.Repo.UpdateJobProgress(ctx, transcodeJob.ID, 100); err != nil {
+		t.Fatalf("UpdateJobProgress error: %v", err)
+	}
+	if err := env.Repo.UpdateJobStatus(ctx, transcodeJob.ID, model.JobStatusCompleted, ""); err != nil {
+		t.Fatalf("UpdateJobStatus error: %v", err)
+	}
+
+	env.AssertJobCompleted(transcodeJob.ID)
+	env.AssertInvariants()
+}
