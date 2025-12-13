@@ -2,11 +2,13 @@ package publish
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/cuivienor/media-pipeline/internal/db"
 	"github.com/cuivienor/media-pipeline/internal/model"
 )
 
@@ -183,4 +185,111 @@ func containsAt(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// mockFilebotRunner simulates FileBot for tests
+type mockFilebotRunner struct {
+	copyFunc func(inputDir, outputDir string) error
+	destDir  string
+}
+
+func (m *mockFilebotRunner) Run(args []string) (string, error) {
+	// Parse args to find input and output
+	var inputDir, outputDir string
+	for i, arg := range args {
+		if arg == "-rename" && i+1 < len(args) {
+			inputDir = args[i+1]
+		}
+		if arg == "--output" && i+1 < len(args) {
+			outputDir = args[i+1]
+		}
+	}
+
+	if inputDir == "" || outputDir == "" {
+		return "", fmt.Errorf("missing input or output directory")
+	}
+
+	// Find MKV files in input
+	files, _ := filepath.Glob(filepath.Join(inputDir, "*.mkv"))
+	if len(files) == 0 {
+		return "", fmt.Errorf("no MKV files in input")
+	}
+
+	// Create output directory (simulate FileBot naming)
+	destDir := filepath.Join(outputDir, "Test Movie (2024)")
+	m.destDir = destDir
+	os.MkdirAll(destDir, 0755)
+
+	// Copy files and generate FileBot-style output
+	var output string
+	for _, src := range files {
+		dst := filepath.Join(destDir, filepath.Base(src))
+		if err := copyFile(src, dst); err != nil {
+			return "", err
+		}
+		output += fmt.Sprintf("[COPY] from [%s] to [%s]\n", src, dst)
+	}
+
+	return output, nil
+}
+
+func TestPublisher_MovieHappyPath(t *testing.T) {
+	// Create temp dirs
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	libraryDir := filepath.Join(tmpDir, "library", "movies")
+	os.MkdirAll(filepath.Join(inputDir, "_main"), 0755)
+	os.MkdirAll(libraryDir, 0755)
+
+	// Create a test file
+	testFile := filepath.Join(inputDir, "_main", "movie.mkv")
+	os.WriteFile(testFile, []byte("test content"), 0644)
+
+	// Setup database
+	database, err := db.OpenInMemory()
+	if err != nil {
+		t.Fatalf("OpenInMemory error: %v", err)
+	}
+	defer database.Close()
+	repo := db.NewSQLiteRepository(database)
+
+	// Create media item with TMDB ID
+	tmdbID := 12345
+	item := &model.MediaItem{
+		Type:     model.MediaTypeMovie,
+		Name:     "Test Movie",
+		SafeName: "Test_Movie",
+		TmdbID:   &tmdbID,
+	}
+	if err := repo.CreateMediaItem(context.Background(), item); err != nil {
+		t.Fatalf("CreateMediaItem error: %v", err)
+	}
+
+	// Create publisher with mock
+	pub := NewPublisher(repo, nil, PublishOptions{
+		LibraryMovies: libraryDir,
+		LibraryTV:     filepath.Join(tmpDir, "library", "tv"),
+	})
+	mock := &mockFilebotRunner{}
+	pub.SetFilebotRunner(mock)
+
+	// Execute publish
+	result, err := pub.Publish(context.Background(), item, inputDir)
+	if err != nil {
+		t.Fatalf("Publish error: %v", err)
+	}
+
+	// Verify result
+	if result.MainFiles != 1 {
+		t.Errorf("MainFiles = %d, want 1", result.MainFiles)
+	}
+	if result.LibraryPath == "" {
+		t.Error("LibraryPath should not be empty")
+	}
+
+	// Verify file was copied
+	destFile := filepath.Join(mock.destDir, "movie.mkv")
+	if _, err := os.Stat(destFile); os.IsNotExist(err) {
+		t.Errorf("destination file not created: %s", destFile)
+	}
 }

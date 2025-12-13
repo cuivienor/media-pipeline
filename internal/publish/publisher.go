@@ -14,6 +14,20 @@ import (
 	"github.com/cuivienor/media-pipeline/internal/model"
 )
 
+// FilebotRunner executes FileBot commands
+type FilebotRunner interface {
+	Run(args []string) (string, error)
+}
+
+// defaultFilebotRunner runs the real FileBot command
+type defaultFilebotRunner struct{}
+
+func (r *defaultFilebotRunner) Run(args []string) (string, error) {
+	cmd := exec.Command("filebot", args...)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
 // Jellyfin-supported extras types
 var extrasTypes = []string{
 	"behind the scenes",
@@ -41,18 +55,25 @@ type ExtraDir struct {
 
 // Publisher handles copying media to the library using FileBot
 type Publisher struct {
-	repo   db.Repository
-	logger *logging.Logger
-	opts   PublishOptions
+	repo    db.Repository
+	logger  *logging.Logger
+	opts    PublishOptions
+	filebot FilebotRunner // Injectable for testing
 }
 
 // NewPublisher creates a new Publisher
 func NewPublisher(repo db.Repository, logger *logging.Logger, opts PublishOptions) *Publisher {
 	return &Publisher{
-		repo:   repo,
-		logger: logger,
-		opts:   opts,
+		repo:    repo,
+		logger:  logger,
+		opts:    opts,
+		filebot: &defaultFilebotRunner{},
 	}
+}
+
+// SetFilebotRunner allows injecting a custom FileBot runner (for testing)
+func (p *Publisher) SetFilebotRunner(runner FilebotRunner) {
+	p.filebot = runner
 }
 
 // buildFilebotArgs constructs FileBot CLI arguments
@@ -105,9 +126,7 @@ func (p *Publisher) findExtras(inputDir string) []ExtraDir {
 
 // runFilebot executes FileBot and returns the output
 func (p *Publisher) runFilebot(args []string) (string, error) {
-	cmd := exec.Command("filebot", args...)
-	output, err := cmd.CombinedOutput()
-	return string(output), err
+	return p.filebot.Run(args)
 }
 
 // parseFilebotDestination extracts the library destination from FileBot output
